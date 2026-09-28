@@ -74,7 +74,7 @@ def read_targets(path: Path) -> tuple[list[BrokerTarget], list[str]]:
         d = parse_date(r.get("dato"))
         ticker = (r.get("ticker") or "").upper()
         broker = (r.get("meglerhus") or "").strip()
-        target = parse_number(r.get("kursmål"))
+        target = parse_number(r.get("kursmal"))
         rec_raw = r.get("anbefaling")
         rec = normalize_recommendation(rec_raw)
         if d is None:
@@ -93,7 +93,7 @@ def read_targets(path: Path) -> tuple[list[BrokerTarget], list[str]]:
             continue
         if problems:  # bare anbefalingen er ugyldig → behold kursmålet
             warnings.append(f"broker_targets.csv rad {i}: {', '.join(problems)}")
-        out.append(BrokerTarget(d, ticker, broker, target, rec, parse_number(r.get("forrige_kursmål")),
+        out.append(BrokerTarget(d, ticker, broker, target, rec, parse_number(r.get("forrige_kursmal")),
                                 r.get("notat", ""), i))
     return out, warnings
 

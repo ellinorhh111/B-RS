@@ -4,6 +4,11 @@ Norsk Excel og Numbers bruker ofte semikolon som skilletegn og komma som
 desimaltegn. Vi LESER derfor begge varianter (skilletegn gjettes fra
 overskriftsraden) og SKRIVER alltid semikolon + UTF-8 med BOM, slik at
 Excel på Mac viser æ/ø/å riktig når filen dobbeltklikkes.
+
+Tegnkoding: Excel på Mac kan lagre CSV som UTF-8, Mac Roman eller Windows-1252,
+og en UTF-8-fil uten BOM åpnes som Mac Roman («kursmål» vises som «kursm√•l»).
+Vi tåler alle disse variantene og reparerer slike ødelagte tegn ved innlesing.
+Kolonnenavn sammenlignes uten æ/ø/å, så «kursmål», «kursmal» og «Kursmål» er likt.
 """
 from __future__ import annotations
 
@@ -22,10 +27,67 @@ WRITE_DELIMITER = ";"
 EMPTY_MARKERS = {"", "-", "–", "—", "n/a", "na"}
 
 
+BOM = b"\xef\xbb\xbf"
+NORDIC = set("æøåÆØÅäöÄÖ")
+MOJIBAKE_MARKERS = ("√", "Ã", "Â")
+
+
+def fix_mojibake(s: str) -> str:
+    """Reparerer UTF-8 som er lest som Mac Roman/Windows-1252 og lagret på nytt.
+
+    Eksempel: «kursm√•l» → «kursmål», «kjÃ¸p» → «kjøp».
+    """
+    if not any(m in s for m in MOJIBAKE_MARKERS):
+        return s
+    for enc in ("mac_roman", "cp1252"):
+        try:
+            return s.encode(enc).decode("utf-8")
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            continue
+    return s
+
+
+def decode_bytes(b: bytes) -> str:
+    """UTF-8 (med/uten BOM) først; ellers den av Mac Roman/Windows-1252 som gir flest æøå."""
+    if b.startswith(BOM):
+        return b[len(BOM):].decode("utf-8")
+    try:
+        return b.decode("utf-8")
+    except UnicodeDecodeError:
+        cands = [b.decode(enc, errors="replace") for enc in ("mac_roman", "cp1252")]
+        return max(cands, key=lambda t: sum(ch in NORDIC for ch in t))
+
+
+def read_text(path: Path) -> str:
+    return fix_mojibake(decode_bytes(path.read_bytes()))
+
+
 def _norm(s: str) -> str:
     # macOS kan lagre «ø» som o + kombinerende tegn (NFD). NFC gjør at
     # «mitt_kursmål» alltid matcher, uansett hvilket program som lagret filen.
     return unicodedata.normalize("NFC", s).strip()
+
+
+_FOLD = str.maketrans({"å": "a", "ø": "o", "æ": "ae", "ä": "a", "ö": "o"})
+
+
+def column_key(h: str) -> str:
+    """Kolonnenavn → nøkkel uten æ/ø/å/mellomrom: «Mitt kursmål» → «mitt_kursmal»."""
+    return "_".join(_norm(h).lower().translate(_FOLD).split())
+
+
+def normalize_file(path: Path) -> bool:
+    """Skriver filen om til UTF-8 med BOM (og reparerer ødelagte æøå) hvis nødvendig.
+
+    Returnerer True hvis filen ble endret. Innholdet ellers røres ikke.
+    """
+    raw = path.read_bytes()
+    text = read_text(path)
+    new = BOM + text.encode("utf-8")
+    if new == raw:
+        return False
+    path.write_bytes(new)
+    return True
 
 
 def _sniff_delimiter(header_line: str) -> str:
@@ -34,17 +96,17 @@ def _sniff_delimiter(header_line: str) -> str:
 
 
 def read_rows(path: Path) -> list[dict[str, str]]:
-    """Leser en CSV-fil til en liste av dict med normaliserte kolonnenavn (små bokstaver).
+    """Leser en CSV-fil til en liste av dict med kolonnenøkler fra column_key().
 
     Tomme rader og rader som starter med # hoppes over.
     """
-    text = path.read_text(encoding="utf-8-sig")
+    text = read_text(path)
     lines = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
     if not lines:
         return []
     delim = _sniff_delimiter(lines[0])
     reader = csv.reader(io.StringIO("\n".join(lines)), delimiter=delim)
-    header = [_norm(h).lower() for h in next(reader)]
+    header = [column_key(h) for h in next(reader)]
     rows = []
     for raw in reader:
         if not any(c.strip() for c in raw):
@@ -62,13 +124,16 @@ def append_row(path: Path, header: list[str], row: dict[str, object]) -> None:
     """
     delim = WRITE_DELIMITER
     if path.exists() and path.stat().st_size > 0:
-        first = path.read_text(encoding="utf-8-sig").splitlines()[0]
-        delim = _sniff_delimiter(first)
-        needs_newline = not path.read_bytes().endswith(b"\n")
-        with path.open("a", encoding="utf-8", newline="") as f:
-            if needs_newline:
-                f.write("\n")
-            csv.writer(f, delimiter=delim).writerow([_fmt(row.get(h)) for h in header])
+        # Skriv hele filen på nytt som UTF-8 med BOM, slik at Excel alltid åpner den riktig.
+        text = read_text(path)
+        delim = _sniff_delimiter(text.splitlines()[0])
+        if not text.endswith("\n"):
+            text += "\n"
+        buf = io.StringIO()
+        csv.writer(buf, delimiter=delim, lineterminator="\n").writerow([_fmt(row.get(h)) for h in header])
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_bytes(BOM + (text + buf.getvalue()).encode("utf-8"))
+        tmp.replace(path)
     else:
         with path.open("w", encoding="utf-8-sig", newline="") as f:
             w = csv.writer(f, delimiter=delim)
@@ -144,10 +209,10 @@ def read_portfolio(path: Path) -> list[Holding]:
             Holding(
                 ticker=ticker,
                 navn=r.get("navn") or ticker,
-                bors=r.get("børs", ""),
+                bors=r.get("bors", ""),
                 valuta=(r.get("valuta") or "").upper(),
-                mitt_kursmal=parse_number(r.get("mitt_kursmål")),
-                dato_kursmal=parse_date(r.get("dato_kursmål")),
+                mitt_kursmal=parse_number(r.get("mitt_kursmal")),
+                dato_kursmal=parse_date(r.get("dato_kursmal")),
                 kommentar=r.get("kommentar", ""),
             )
         )

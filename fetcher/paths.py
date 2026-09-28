@@ -50,3 +50,11 @@ def ensure_dirs() -> None:
         dst = config_dir() / src.name
         if src.is_file() and not dst.exists():
             shutil.copy2(src, dst)
+    # Sørg for at CSV-filene har BOM, ellers viser Excel æøå feil (f.eks. «kursm√•l»).
+    from .csvio import normalize_file
+
+    for f in config_dir().glob("*.csv"):
+        try:
+            normalize_file(f)
+        except OSError:
+            pass
