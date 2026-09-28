@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timedelta, timezone
 
 from fetcher import main, paths, verify
-from fetcher.sources.prices_base import Consensus, Quote, TickerInfo
+from fetcher.sources.prices_base import Consensus, Fundamentals, Quote, TickerInfo
 from fetcher.csvio import Holding
 
 
@@ -18,6 +18,12 @@ class FakeSource:
         out = {t: Quote(t, 110.0, 100.0, "SEK" if t.endswith(".ST") else "NOK", None, daily_closes=[("2026-09-25", 100.0)])
                for t in tickers if t not in self.missing}
         return out, {t: "ingen data" for t in self.missing}
+
+    def fundamentals(self, tickers):
+        if self.fail:
+            raise ConnectionError("nett nede")
+        return {t: Fundamentals(t, t, "EQUITY", "", "SEK" if t.endswith(".ST") else "NOK", 110.0,
+                                1.2, 10.0, 0.05, 0.13, 5e10) for t in tickers}, {}
 
     def consensus(self, tickers):
         self.consensus_calls = getattr(self, "consensus_calls", 0) + 1

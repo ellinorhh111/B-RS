@@ -45,3 +45,63 @@ def test_discover_uses_newsweb_and_filters(root, monkeypatch, capsys):
     assert "GJF.OL;GJF ASA;Oslo Børs;forsikring" in csv_text
     report = capsys.readouterr().out
     assert "IKKE FUNNET" in report and "XBANKOBL.OL" in report
+
+
+def _write(path, text):
+    path.write_text(text, encoding="utf-8")
+
+
+def test_sector_panel_medians_ekb_overrides_fx(root):
+    from test_run import NOW, FakeSource, read_json
+    from fetcher import main
+
+    cfg = root / "config"
+    _write(cfg / "peers.csv", "ticker;navn;børs;type;ekb;merknad\n"
+           "MING.OL;SpareBank 1 SMN;Oslo Børs;bank;;\n"          # EK-bevis (navn uten ASA)
+           "DNB.OL;DNB Bank ASA;Oslo Børs;bank;;\n"
+           "FFSB.OL;Flekkefjord Sparebank;Oslo Børs;bank;;\n"      # EK-bevis med eierbrøk
+           "TFBANK.ST;TF Bank AB;Nasdaq Stockholm;forbruksbank;;\n"
+           "GJF.OL;Gjensidige Forsikring ASA;Oslo Børs;forsikring;;\n"
+           "SBNOR.OL;Sparebanken Norge;Oslo Børs;bank;;\n")      # mitt eget → ikke dobbelt
+    _write(cfg / "overrides.csv", "ticker;eierbrøk;pb;pe;direkteavkastning;roe;dato;kommentar\n"
+           "FFSB.OL;12 %;;;;;2026-09-01;Q2-rapport\n"
+           "GJF.OL;;3,5;;;;2026-09-01;fra kvartalsrapport\n")
+
+    class Src(FakeSource):
+        def quotes(self, tickers):
+            out, err = super().quotes(tickers)
+            for t, q in out.items():
+                q.prev_close = {"DNB.OL": 100.0, "MING.OL": 105.0, "GJF.OL": 112.0}.get(t, 108.0)
+                if t == "SEKNOK=X":
+                    q.price, q.prev_close = 0.95, 0.95
+            return out, err
+
+    main.run(force=True, source=Src(), now=NOW)
+    d = read_json()
+    rows = {r["ticker"]: r for r in d["peers"]}
+    assert sum(1 for r in d["peers"] if r["ticker"] == "SBNOR.OL") == 1 and rows["SBNOR.OL"]["mine"]
+    # EK-bevis uten eierbrøk: P/B og P/E skjules; ROE og direkteavkastning vises
+    assert rows["MING.OL"]["pb"] is None and rows["MING.OL"]["pe"] is None and rows["MING.OL"]["roe_pct"] == 13.0
+    # EK-bevis med eierbrøk 12 %: 1,2 / 0,12 = 10,0 og 10 / 0,12 = 83,33
+    assert round(rows["FFSB.OL"]["pb"], 2) == 10.0 and round(rows["FFSB.OL"]["pe"], 2) == 83.33
+    assert rows["DNB.OL"]["pb"] == 1.2  # vanlig aksje: Yahoo-tallet brukes
+    assert rows["GJF.OL"]["pb"] == 3.5 and rows["GJF.OL"]["kilde"]["pb"] == "manuell"
+    # Markedsverdi: 5e10 SEK × 0,95 = 47,5 mrd NOK
+    assert rows["TFBANK.ST"]["mcap_mrd_nok"] == 47.5 and d["valuta"]["kurs"] == 0.95
+    # Bank-median (uten SBNOR): P/B fra DNB 1,2 og FFSB 10,0 → median 5,6
+    assert d["peer_median"]["bank"]["n"] == 3 and round(d["peer_median"]["bank"]["pb"], 2) == 5.6
+    # Sektor i dag, banker: DNB +10 %, MING +4,76 %, FFSB/SBNOR/NOBA/TF +1,85 % (likevektet)
+    s = d["sektor_i_dag"]
+    assert s["bank"]["n"] == 6 and s["beste"][0]["ticker"] == "DNB.OL"
+    v = next(c for c in d["selskaper"] if c["ticker"] == "PROT.OL")["verdsettelse"]
+    assert v["type"] == "forsikring" and v["fokus"][0] == "pe" and v["median"]["pb"] == 3.5
+
+
+def test_approve_writes_peers_csv_with_ekb(root, monkeypatch):
+    (root / "data" / "peers_forslag.csv").write_text(
+        "ticker;navn;børs;type;merknad\nMING.OL;SpareBank 1 SMN;Oslo Børs;bank;\n"
+        "BIEN.OL;Bien Sparebank ASA;Oslo Børs;bank;\n", encoding="utf-8")
+    assert peers.approve() == 0
+    text = (root / "config" / "peers.csv").read_text(encoding="utf-8-sig")
+    assert "MING.OL;SpareBank 1 SMN;Oslo Børs;bank;ja;" in text
+    assert "BIEN.OL;Bien Sparebank ASA;Oslo Børs;bank;nei;" in text

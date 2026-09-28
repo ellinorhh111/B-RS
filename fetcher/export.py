@@ -24,8 +24,10 @@ SOURCE_LABELS = {
     "broker_targets.csv": "broker_targets.csv",
     "newsweb": "Newsweb (børsmeldinger Oslo)",
     "nasdaq": "Nasdaq Stockholm (børsvarsler)",
+    "yahoo_peers": "Yahoo Finance (peer-kurser)",
+    "yahoo_nokkeltall": "Yahoo Finance (nøkkeltall)",
 }
-# Valgfrie kilder: feiler de, vises det ikke som varsel (de dekkes av Google News).
+# Valgfrie kilder: feiler de, vises det ikke som varsel.
 OPTIONAL_PREFIX = "rss_"
 
 
@@ -76,8 +78,9 @@ def _round(v: float | None, n: int = 4) -> float | None:
 
 
 def build(store: Store, holdings: list[Holding], now: datetime, run_errors: list[str],
-          broker_targets: list[targets.BrokerTarget] | None = None) -> dict:
+          broker_targets: list[targets.BrokerTarget] | None = None, sector_data: dict | None = None) -> dict:
     broker_targets = broker_targets or []
+    sector_data = sector_data or {}
     today = now.astimezone(schedule.OSLO).date()
     companies = []
     for h in holdings:
@@ -101,6 +104,7 @@ def build(store: Store, holdings: list[Holding], now: datetime, run_errors: list
             "konsensus": _consensus(store.get_consensus(h.ticker), price),
             "nyheter": [_news(r) for r in store.list_news("selskap", h.ticker, limit=40)],
             "megler": targets.summarize(broker_targets, h.ticker, price, today),
+            "verdsettelse": (sector_data.get("verdsettelse") or {}).get(h.ticker),
             "mitt": {
                 "kursmal": h.mitt_kursmal,
                 "dato": h.dato_kursmal.isoformat() if h.dato_kursmal else None,
@@ -137,6 +141,10 @@ def build(store: Store, holdings: list[Holding], now: datetime, run_errors: list
         "forslag": _suggestions(store, broker_targets),
         "meglerhus": targets.known_brokers(broker_targets),
         "forrige_per_megler": targets.last_target_by_broker(broker_targets),
+        "peers": sector_data.get("peers", []),
+        "peer_median": sector_data.get("peer_median", {}),
+        "sektor_i_dag": sector_data.get("sektor_i_dag"),
+        "valuta": sector_data.get("valuta"),
         "grenser": {"gronn_over_pct": calc.GREEN_ABOVE * 100, "rod_under_pct": calc.RED_BELOW * 100,
                     "gammel_etter_dager": calc.OLD_TARGET_DAYS},
     }

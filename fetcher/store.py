@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .sources.prices_base import Consensus, Quote
+from .sources.prices_base import Consensus, Fundamentals, Quote
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS quotes (
@@ -46,6 +46,10 @@ CREATE TABLE IF NOT EXISTS suggestions (
     id TEXT PRIMARY KEY, ticker TEXT NOT NULL, kursmal REAL NOT NULL, forrige REAL,
     meglerhus TEXT, anbefaling TEXT, retning TEXT, tittel TEXT, kilde TEXT, lenke TEXT,
     publisert TEXT, first_seen TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ny', handled_at TEXT
+);
+CREATE TABLE IF NOT EXISTS fundamentals (
+    ticker TEXT PRIMARY KEY, name TEXT, pb REAL, pe REAL, div_yield REAL, roe REAL,
+    market_cap REAL, currency TEXT, source TEXT, fetched_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
@@ -97,6 +101,17 @@ class Store:
     def get_quote(self, ticker: str) -> sqlite3.Row | None:
         with self.conn() as c:
             return c.execute("SELECT * FROM quotes WHERE ticker=?", (ticker,)).fetchone()
+
+    # --- nøkkeltall -----------------------------------------------------------
+    def save_fundamentals(self, found: dict[str, Fundamentals], source: str, now: datetime) -> None:
+        with self.conn() as c:
+            for f in found.values():
+                c.execute("INSERT OR REPLACE INTO fundamentals VALUES (?,?,?,?,?,?,?,?,?,?)",
+                          (f.ticker, f.name, f.pb, f.pe, f.div_yield, f.roe, f.market_cap, f.currency, source, _iso(now)))
+
+    def get_fundamentals(self, ticker: str) -> sqlite3.Row | None:
+        with self.conn() as c:
+            return c.execute("SELECT * FROM fundamentals WHERE ticker=?", (ticker,)).fetchone()
 
     # --- konsensus ----------------------------------------------------------
     def save_consensus(self, found: dict[str, Consensus], checked: list[str], source: str,

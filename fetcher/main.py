@@ -25,6 +25,10 @@ log = logging.getLogger("fetcher")
 
 # Konsensus endrer seg sjelden; å hente den sjeldnere skåner Yahoo og gjør kjøringen raskere.
 CONSENSUS_INTERVAL = timedelta(hours=6)
+# Peers: kurser hvert 15. min (i åpningstiden), nøkkeltall to ganger i døgnet.
+PEER_QUOTES_INTERVAL = timedelta(minutes=15)
+FUNDAMENTALS_INTERVAL = timedelta(hours=12)
+FX_TICKERS = ["SEKNOK=X"]  # valutakurs for markedsverdi i NOK
 
 
 def load_holdings(store: Store, now: datetime, errors: list[str]) -> list[Holding]:
@@ -69,6 +73,40 @@ def fetch_quotes(store: Store, source: PriceSource, tickers: list[str], now: dat
         errors.append(f"{source.name}: {e}")
 
 
+def _due(store: Store, key: str, interval: timedelta, now: datetime, force: bool) -> bool:
+    last = parse_iso(store.get_meta(key))
+    return force or last is None or now - last >= interval - timedelta(minutes=1)
+
+
+def fetch_peers(store: Store, source: PriceSource, peer_tickers: list[str], own: list[str], now: datetime,
+                errors: list[str], force: bool) -> None:
+    """Kurser for peers (og valutakurs) hvert 15. min; nøkkeltall for peers + egne selskaper hvert 12. time."""
+    if peer_tickers and _due(store, "last_peer_quotes", PEER_QUOTES_INTERVAL, now, force):
+        try:
+            quotes, qerrors = source.quotes(peer_tickers + FX_TICKERS)
+            store.save_quotes(quotes, source.name, now)
+            store.set_source_status("yahoo_peers", bool(quotes), now,
+                                    f"{len(qerrors)} av {len(peer_tickers) + len(FX_TICKERS)} feilet" if qerrors else None)
+            store.set_meta("last_peer_quotes", now.isoformat())
+            log.info("Peer-kurser: %d ok, %d feilet", len(quotes), len(qerrors))
+        except Exception as e:  # noqa: BLE001
+            log.exception("Peer-kurser feilet")
+            store.set_source_status("yahoo_peers", False, now, f"{type(e).__name__}: {e}")
+            errors.append(f"yahoo_peers: {e}")
+    if _due(store, "last_fundamentals", FUNDAMENTALS_INTERVAL, now, force):
+        try:
+            found, ferrors = source.fundamentals(own + peer_tickers)
+            store.save_fundamentals(found, source.name, now)
+            store.set_source_status("yahoo_nokkeltall", bool(found), now,
+                                    f"{len(ferrors)} tickere uten nøkkeltall" if ferrors else None)
+            store.set_meta("last_fundamentals", now.isoformat())
+            log.info("Nøkkeltall: %d ok, %d uten", len(found), len(ferrors))
+        except Exception as e:  # noqa: BLE001
+            log.exception("Nøkkeltall feilet")
+            store.set_source_status("yahoo_nokkeltall", False, now, f"{type(e).__name__}: {e}")
+            errors.append(f"yahoo_nokkeltall: {e}")
+
+
 def consensus_due(store: Store, now: datetime, force: bool) -> bool:
     st = store.get_source_status("yahoo_konsensus")
     if force or st is None:
@@ -97,7 +135,18 @@ def fetch_consensus(store: Store, source: PriceSource, tickers: list[str], now: 
 
 def write_json(store: Store, holdings: list[Holding], now: datetime, errors: list[str],
                broker_targets: list[targets.BrokerTarget]) -> None:
-    export.write(export.build(store, holdings, now, errors, broker_targets), paths.json_path())
+    from . import peerconfig, sector
+    from .peers import classify
+
+    try:
+        sector_data = sector.build(store, peerconfig.read_peers(paths.config_dir() / "peers.csv"), holdings,
+                                   peerconfig.read_overrides(paths.config_dir() / "overrides.csv"),
+                                   {h.ticker: classify(h.navn) for h in holdings})
+    except Exception as e:  # noqa: BLE001 – peers skal aldri stoppe resten av widgeten
+        log.exception("Peer-beregning feilet")
+        errors.append(f"peers: {e}")
+        sector_data = {}
+    export.write(export.build(store, holdings, now, errors, broker_targets, sector_data), paths.json_path())
 
 
 def run(force: bool = False, source: PriceSource | None = None, now: datetime | None = None) -> int:
@@ -119,6 +168,10 @@ def run(force: bool = False, source: PriceSource | None = None, now: datetime | 
         fetch_quotes(store, source, tickers, now, errors)
         if consensus_due(store, now, force):
             fetch_consensus(store, source, tickers, now, errors)
+        from .peerconfig import read_peers
+
+        peer_list = [p.ticker for p in read_peers(paths.config_dir() / "peers.csv") if p.ticker not in tickers]
+        fetch_peers(store, source, peer_list, tickers, now, errors, force)
         try:
             news.run_all(store, paths.config_dir(), now, errors, lambda t: _price(store, t), force)
         except Exception as e:  # noqa: BLE001 – nyhetsfeil skal aldri stoppe kursene
@@ -232,7 +285,7 @@ def main(argv: list[str] | None = None) -> int:
     f.add_argument("action", choices=["bekreft", "forkast"])
     f.add_argument("id")
     pe = sub.add_parser("peers", help="finn og verifiser peers (Oslo via Newsweb, Stockholm via kandidatliste)")
-    pe.add_argument("action", choices=["finn"])
+    pe.add_argument("action", choices=["finn", "godkjenn"])
     pr = sub.add_parser("probe", help="sjekk nyhetskildene (robots.txt og RSS)")
     pr.add_argument("--dyp", action="store_true", help="let etter RSS-lenker og vis Newsweb-svar")
     args = p.parse_args(argv)
@@ -245,9 +298,9 @@ def main(argv: list[str] | None = None) -> int:
         return verify_portfolio()
 
     if args.cmd == "peers":
-        from .peers import discover
+        from .peers import approve, discover
 
-        return discover()
+        return discover() if args.action == "finn" else approve()
 
     if args.cmd == "probe":
         from .probe import deep_probe, probe

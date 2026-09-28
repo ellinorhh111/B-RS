@@ -28,6 +28,8 @@ export const initialState = {
   panel: null, // null | "nyheter" | "sektor" | "forslag"
   prefill: null, // kursmålforslag som fylles inn i skjemaet
   action: null, // { id, busy, ok, msg } for bekreft/forkast
+  peerType: "bank", // filter i peer-tabellen
+  peerSort: { key: "mcap_mrd_nok", dir: -1 },
 };
 
 export const updateState = (event, prev) => {
@@ -56,6 +58,11 @@ export const updateState = (event, prev) => {
       return { ...prev, panel: prev.panel === event.panel ? null : event.panel };
     case "PREFILL":
       return { ...prev, selected: event.prefill.ticker, prefill: event.prefill, panel: null, form: null };
+    case "PEER_TYPE":
+      return { ...prev, peerType: event.value };
+    case "PEER_SORT":
+      return { ...prev, peerSort: prev.peerSort.key === event.key
+        ? { key: event.key, dir: -prev.peerSort.dir } : { key: event.key, dir: event.key === "navn" ? 1 : -1 } };
     case "CLEAR_PREFILL":
       return { ...prev, prefill: null };
     case "ACTION":
@@ -285,6 +292,20 @@ const box = css`
   .sugg .t { font-size: 12px; cursor: pointer; }
   .sugg .t:hover { text-decoration: underline; }
   .sugg .row2 { display: flex; gap: 8px; align-items: center; margin-top: 4px; font-size: 12px; }
+  .sector { padding: 6px 12px 8px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 12px; }
+  .sector .row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 2px; }
+  .sector b { font-weight: 500; }
+  .chips { display: flex; gap: 6px; margin: 2px 0 6px; }
+  .chip { font-size: 11px; padding: 1px 8px; border-radius: 10px; cursor: pointer; color: #8e8e93;
+          border: 1px solid rgba(255,255,255,0.12); }
+  .chip.on { color: #16161a; background: #d9d9de; border-color: #d9d9de; }
+  table.peers th { cursor: pointer; }
+  table.peers th.on { color: #e4e4e6; }
+  table.peers td, table.peers th { padding: 3px 5px; font-size: 12px; }
+  table.peers tr.mine td { background: rgba(138,180,248,0.10); }
+  table.peers tr.med td { border-top: 1px solid rgba(255,255,255,0.25); color: #8e8e93; font-style: italic; }
+  .man { color: #8ab4f8; font-size: 10px; vertical-align: 2px; margin-left: 1px; }
+  .vtable td, .vtable th { padding: 3px 6px; font-size: 12px; }
   .sugg button.ghost { background: transparent; color: #8e8e93; border: 1px solid rgba(255,255,255,0.15); }
 `;
 
@@ -486,6 +507,153 @@ const Suggestions = ({ items, data, state, dispatch }) =>
     <div className="empty">Ingen nye kursmålforslag.</div>
   );
 
+// ---------- sektor og peers ----------
+const SectorToday = ({ s }) => {
+  if (!s) return null;
+  const item = (r) => (
+    <span key={r.ticker} className={r.mine ? "name" : ""}>
+      {shortTicker(r.ticker)} <span className={changeClass(r.endring_pct)}>{fmtPct(r.endring_pct)}</span>
+    </span>
+  );
+  return (
+    <div className="sector">
+      <div className="sect" style={{ margin: 0 }}>Sektor i dag</div>
+      <div className="row">
+        <span>Banker <b className={changeClass(get(s, "bank", "snitt_pct"))}>{fmtPct(get(s, "bank", "snitt_pct"), 2)}</b>
+          <span className="muted small"> (snitt av {get(s, "bank", "n") || 0})</span></span>
+        <span>Forsikring <b className={changeClass(get(s, "forsikring", "snitt_pct"))}>{fmtPct(get(s, "forsikring", "snitt_pct"), 2)}</b>
+          <span className="muted small"> (snitt av {get(s, "forsikring", "n") || 0})</span></span>
+      </div>
+      {s.beste && s.beste.length ? <div className="row"><span className="muted" style={{ minWidth: 52 }}>Best:</span>{s.beste.map(item)}</div> : null}
+      {s.svakeste && s.svakeste.length ? <div className="row"><span className="muted" style={{ minWidth: 52 }}>Svakest:</span>{s.svakeste.map(item)}</div> : null}
+    </div>
+  );
+};
+
+const PEER_COLS = [
+  ["navn", "Selskap"], ["endring_pct", "I dag"], ["pb", "P/B"], ["pe", "P/E"],
+  ["dy_pct", "Dir.avk."], ["roe_pct", "ROE"], ["mcap_mrd_nok", "Mrd NOK"],
+];
+
+const cell = (r, key) => {
+  const manual = r.kilde && ((key === "dy_pct" && r.kilde.dy === "manuell") || r.kilde[key.replace("_pct", "")] === "manuell");
+  const v = r[key];
+  const txt = key === "endring_pct" ? fmtPct(v) : key.endsWith("_pct") ? (isNum(v) ? fmtNum(v, 1) + " %" : "–")
+    : key === "mcap_mrd_nok" ? fmtNum(v, 1) : fmtNum(v, key === "pe" ? 1 : 2);
+  return <span>{txt}{manual ? <span className="man" title="Manuelt tall fra overrides.csv">m</span> : null}</span>;
+};
+
+// P/B (y) mot ROE (x) for bankene. Intuisjon: høyere lønnsomhet (ROE) bør gi høyere P/B.
+// Ligger en bank over «skyen» er den dyr relativt til lønnsomheten, under er den billig.
+const Scatter = ({ rows, median }) => {
+  const pts = rows.filter((r) => isNum(r.pb) && isNum(r.roe_pct));
+  if (pts.length < 3) return <div className="empty">For få banker med både P/B og ROE til å tegne P/B mot ROE.</div>;
+  const W = 540, H = 200, L = 36, B = 22, T = 8, R = 20;
+  const xs = pts.map((r) => r.roe_pct), ys = pts.map((r) => r.pb);
+  const x0 = Math.min(0, ...xs), x1 = Math.max(...xs) * 1.08, y0 = 0, y1 = Math.max(...ys) * 1.12;
+  const X = (v) => L + ((v - x0) / (x1 - x0)) * (W - L - R);
+  const Y = (v) => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+  const ticks = (a, b, n) => Array.from({ length: n + 1 }, (_, i) => a + ((b - a) * i) / n);
+  return (
+    <svg width={W} height={H} style={{ display: "block", marginTop: 4 }}>
+      {ticks(y0, y1, 4).map((t) => (
+        <g key={"y" + t}><line x1={L} x2={W - R} y1={Y(t)} y2={Y(t)} stroke="rgba(255,255,255,0.06)" />
+          <text x={L - 4} y={Y(t) + 3} fontSize="10" fill="#8e8e93" textAnchor="end">{fmtNum(t, 1)}</text></g>
+      ))}
+      {ticks(x0, x1, 5).map((t) => (
+        <text key={"x" + t} x={X(t)} y={H - 6} fontSize="10" fill="#8e8e93" textAnchor="middle">{fmtNum(t, 0)} %</text>
+      ))}
+      {median && isNum(median.pb) ? <line x1={L} x2={W - R} y1={Y(median.pb)} y2={Y(median.pb)} stroke="#8e8e93" strokeDasharray="3 3" /> : null}
+      {median && isNum(median.roe_pct) ? <line x1={X(median.roe_pct)} x2={X(median.roe_pct)} y1={T} y2={H - B} stroke="#8e8e93" strokeDasharray="3 3" /> : null}
+      {pts.filter((r) => !r.mine).map((r) => (
+        <circle key={r.ticker} cx={X(r.roe_pct)} cy={Y(r.pb)} r="3.2" fill="#8e8e93" opacity="0.8">
+          <title>{`${r.navn}: ROE ${fmtNum(r.roe_pct, 1)} %, P/B ${fmtNum(r.pb, 2)}`}</title></circle>
+      ))}
+      {pts.filter((r) => r.mine).map((r) => (
+        <g key={r.ticker}><circle cx={X(r.roe_pct)} cy={Y(r.pb)} r="5" fill="#8ab4f8" />
+          <text x={X(r.roe_pct) + 7} y={Y(r.pb) + 4} fontSize="11" fill="#e4e4e6">{shortTicker(r.ticker)}</text></g>
+      ))}
+      <text x={W - R} y={T + 10} fontSize="10" fill="#8e8e93" textAnchor="end">P/B (loddrett) mot ROE (vannrett) · stiplet = peer-median</text>
+    </svg>
+  );
+};
+
+const PeersPanel = ({ data, state, dispatch }) => {
+  const typ = state.peerType;
+  const all = (data.peers || []).filter((r) => r.type === typ);
+  const { key, dir } = state.peerSort;
+  const rows = all.slice().sort((a, b) => {
+    const va = a[key], vb = b[key];
+    if (key === "navn") return dir * String(va).localeCompare(String(vb), "nb");
+    if (!isNum(va)) return 1;
+    if (!isNum(vb)) return -1;
+    return dir * (va - vb);
+  });
+  const med = (data.peer_median || {})[typ] || {};
+  if (!(data.peers || []).length) {
+    return <div className="empty">Ingen peers ennå. Kjør FinnPeers.command og godkjenn listen (se README).</div>;
+  }
+  return (
+    <div>
+      <div className="chips">
+        {["bank", "forbruksbank", "forsikring"].map((t) => (
+          <span key={t} className={"chip" + (typ === t ? " on" : "")} onClick={() => dispatch({ type: "PEER_TYPE", value: t })}>
+            {t === "bank" ? "Banker" : t === "forbruksbank" ? "Forbruksbanker" : "Forsikring"}
+          </span>
+        ))}
+      </div>
+      <table className="peers">
+        <thead>
+          <tr>{PEER_COLS.map(([k, label]) => (
+            <th key={k} className={key === k ? "on" : ""} onClick={() => dispatch({ type: "PEER_SORT", key: k })}>
+              {label}{key === k ? (dir > 0 ? " ▲" : " ▼") : ""}</th>
+          ))}</tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.ticker} className={r.mine ? "mine" : ""} title={r.merknad || ""}>
+              <td>{r.navn} <span className="muted small">{shortTicker(r.ticker)}{r.ekb ? " · EKB" : ""}</span></td>
+              {PEER_COLS.slice(1).map(([k]) => <td key={k} className={k === "endring_pct" ? changeClass(r[k]) : ""}>{cell(r, k)}</td>)}
+            </tr>
+          ))}
+          <tr className="med">
+            <td>Median (uten mine, n={med.n || 0})</td><td></td>
+            <td>{fmtNum(med.pb, 2)}</td><td>{fmtNum(med.pe, 1)}</td>
+            <td>{isNum(med.dy_pct) ? fmtNum(med.dy_pct, 1) + " %" : "–"}</td>
+            <td>{isNum(med.roe_pct) ? fmtNum(med.roe_pct, 1) + " %" : "–"}</td><td></td>
+          </tr>
+        </tbody>
+      </table>
+      {typ !== "forsikring" ? <Scatter rows={all} median={med} /> : null}
+      <div className="muted small" style={{ marginTop: 4 }}>
+        EKB = egenkapitalbevis: P/B og P/E vises først når eierbrøk er lagt inn i overrides.csv. m = manuelt tall.
+        {data.valuta ? ` Markedsverdi i NOK, SEK/NOK ${fmtNum(data.valuta.kurs, 4)}.` : ""}
+      </div>
+    </div>
+  );
+};
+
+const Valuation = ({ v }) => {
+  if (!v) return null;
+  const label = { pb: "P/B", pe: "P/E", dy_pct: "Direkteavkastning", roe_pct: "ROE" };
+  const fmt = (k, x) => (k.endsWith("_pct") ? (isNum(x) ? fmtNum(x, 1) + " %" : "–") : fmtNum(x, k === "pe" ? 1 : 2));
+  const typeName = v.type === "bank" ? "banker" : v.type === "forbruksbank" ? "forbruksbanker" : "forsikringsselskaper";
+  return (
+    <div>
+      <div className="sect">Verdsettelse mot peers ({typeName}, n={get(v, "median", "n") || 0})</div>
+      <table className="vtable">
+        <thead><tr><th>Nøkkeltall</th><th>Selskapet</th><th>Peer-median</th></tr></thead>
+        <tbody>
+          {v.fokus.map((k) => (
+            <tr key={k}><td>{label[k]}</td><td>{fmt(k, v.egen[k])}</td><td>{fmt(k, v.median[k])}</td></tr>
+          ))}
+        </tbody>
+      </table>
+      {v.merknad ? <div className="muted small">{v.merknad}</div> : null}
+    </div>
+  );
+};
+
 const Detail = ({ c, data, state, dispatch }) => {
   const k = c.konsensus;
   const m = c.megler || { siste: [], historikk: [] };
@@ -524,6 +692,8 @@ const Detail = ({ c, data, state, dispatch }) => {
           {state.showHistory ? <TargetRows rows={m.historikk} cur={cur} /> : null}
         </div>
       ) : null}
+
+      <Valuation v={c.verdsettelse} />
 
       {(data.forslag || []).some((f) => f.ticker === c.ticker) ? (
         <div>
@@ -578,6 +748,7 @@ export const render = (state, dispatch) => {
       )}
       <SourceWarnings kilder={data.kilder} />
       <Companies selskaper={selskaper} selected={selected} dispatch={dispatch} />
+      <SectorToday s={data.sektor_i_dag} />
       {(data.forslag || []).length ? (
         <div className="notice" onClick={() => dispatch({ type: "PANEL", panel: "forslag" })}>
           ● {data.forslag.length} {data.forslag.length === 1 ? "nytt kursmålforslag" : "nye kursmålforslag"} fra nyheter – klikk for å se
@@ -594,13 +765,16 @@ export const render = (state, dispatch) => {
         <div className="block">
           <div className="dhead">
             <span className="sect">
-              {state.panel === "nyheter" ? "Alle nyheter og børsmeldinger" : state.panel === "sektor"
+              {state.panel === "peers" ? "Peers: banker og forsikring (Oslo og Stockholm)"
+                : state.panel === "nyheter" ? "Alle nyheter og børsmeldinger" : state.panel === "sektor"
                 ? "Sektor: bank og forsikring (Norge og Sverige)" : "Kursmålforslag fra nyhetsoverskrifter"}
             </span>
             <span className="x" onClick={() => dispatch({ type: "PANEL", panel: state.panel })} title="Lukk">✕</span>
           </div>
-          <div className="scroll" style={{ maxHeight: 420 }}>
-            {state.panel === "nyheter" ? (
+          <div className="scroll" style={{ maxHeight: state.panel === "peers" ? 760 : 420 }}>
+            {state.panel === "peers" ? (
+              <PeersPanel data={data} state={state} dispatch={dispatch} />
+            ) : state.panel === "nyheter" ? (
               <NewsList showTicker items={[].concat(...selskaper.map((c) => c.nyheter || []))
                 .sort((a, b) => (a.tid < b.tid ? 1 : -1)).slice(0, 80)} />
             ) : state.panel === "sektor" ? (
@@ -612,6 +786,7 @@ export const render = (state, dispatch) => {
         </div>
       ) : null}
       <div className="nav">
+        <span className={state.panel === "peers" ? "on" : ""} onClick={() => dispatch({ type: "PANEL", panel: "peers" })}>Peers</span>
         <span className={state.panel === "nyheter" ? "on" : ""} onClick={() => dispatch({ type: "PANEL", panel: "nyheter" })}>Alle nyheter</span>
         <span className={state.panel === "sektor" ? "on" : ""} onClick={() => dispatch({ type: "PANEL", panel: "sektor" })}>Sektor</span>
         <span className={state.panel === "forslag" ? "on" : ""} onClick={() => dispatch({ type: "PANEL", panel: "forslag" })}>

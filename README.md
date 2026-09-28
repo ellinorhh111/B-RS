@@ -4,7 +4,8 @@ En gratis skrivebordswidget som viser kurser, kursmål, nyheter og peers for
 selskapene du følger på Oslo Børs og Nasdaq Stockholm. Alt kjører lokalt på
 Macen din. Ingen betalte API-er.
 
-> **Status:** Steg 3 av 5. Kurser, konsensus, meglerkursmål, oppside, nyheter, børsmeldinger, sektorfeed og
+> **Status:** Steg 4 av 5 (peers og sektorpanel) – peer-listen venter på godkjenning.
+> Tidligere: steg 3 av 5. Kurser, konsensus, meglerkursmål, oppside, nyheter, børsmeldinger, sektorfeed og
 > kursmålforslag vises i widgeten. Peers, markedspanel, varsler og automatisk kjøring kommer i neste steg.
 
 ## Slik henger det sammen
@@ -156,6 +157,63 @@ Overskrifter som «Pareto hever kursmålet på Protector til 480 kroner» eller 
 
 Tall godtas bare mellom 0,25× og 4× dagens kurs. Da blir ikke årstall, prosenter og tastefeil tolket som kursmål.
 Forslag du allerede har lagt inn selv, med samme ticker og kursmål, skjules automatisk.
+
+## Peers og sektorpanel
+
+### Slik lages og godkjennes peer-listen
+
+1. Dobbeltklikk **FinnPeers.command**. Den finner alle banker, sparebanker og forsikringsselskaper som har publisert
+   på Newsweb de siste 90 dagene (Oslo), og en kandidatliste for Stockholm. Hver kandidat sjekkes mot Yahoo.
+   Rapporten åpnes i TekstEdit, og forslaget lagres i `data/peers_forslag.csv`.
+2. Se over forslaget. Du kan rette `data/peers_forslag.csv` i Excel (fjerne rader, endre type).
+3. Dobbeltklikk **GodkjennPeers.command**. Forslaget blir `config/peers.csv`, og peer-data hentes.
+
+`config/peers.csv` kan redigeres senere:
+
+| Kolonne | Eksempel | Betydning |
+|---|---|---|
+| ticker | `MING.OL` | Yahoo-format |
+| navn | `SpareBank 1 SMN` | |
+| børs | `Oslo Børs` | |
+| type | `bank` / `forbruksbank` / `forsikring` | Bestemmer hvilken peer-median selskapet inngår i |
+| ekb | `ja` / `nei` | Egenkapitalbevis. Fylles ut automatisk (sparebank uten «ASA» i navnet) |
+| merknad | fritekst | |
+
+### Egenkapitalbevis og eierbrøk (viktig)
+
+For sparebanker med egenkapitalbevis (EKB) er Yahoos P/B og P/E **for lave**. Yahoo ser ut til å fordele hele bankens
+egenkapital og overskudd på bevisene, mens bevisholderne bare eier sin andel (eierbrøken). Resten tilhører grunnfondet.
+
+* Riktig P/B = P/B fra Yahoo / eierbrøk
+* Riktig P/E = P/E fra Yahoo / eierbrøk
+* *Eksempel:* P/B fra Yahoo 0,12 og eierbrøk 12 % → 0,12 / 0,12 = **1,0**.
+
+Til du har lagt inn eierbrøken, vises P/B og P/E som «–» for EKB-banker. ROE og direkteavkastning vises alltid.
+Eierbrøken står i bankens kvartalsrapport. Legg den inn i `config/overrides.csv`:
+
+| Kolonne | Eksempel | Betydning |
+|---|---|---|
+| ticker | `SBNOR.OL` | |
+| eierbrøk | `64,5 %` | Korrigerer Yahoos P/B og P/E |
+| pb, pe | `1,15` | Overstyrer tallet helt (f.eks. fra kvartalsrapporten) |
+| direkteavkastning, roe | `7,2 %` | Overstyrer Yahoo |
+| dato, kommentar | `2026-09-30`, `Q2-rapport` | For din egen oversikt |
+
+Manuelle tall merkes med en liten **m** i peer-tabellen.
+
+### Beregninger i sektorpanelet
+
+* **Sektor i dag:** likevektet snitt av dagsendringen, der hver aksje teller likt. Banker = bank + forbruksbank.
+  Viser også de 3 beste og 3 svakeste.
+* **Peer-median:** medianen per type, *uten* dine egne selskaper. Medianen brukes i stedet for snittet, så én ekstrem
+  verdi (f.eks. en nettmegler med P/B 10) ikke trekker sammenligningen skjevt.
+* **Verdsettelse mot peers** (under hvert selskap): bankene sammenlignes på P/B og ROE, Protector på P/E, P/B og
+  direkteavkastning.
+* **P/B mot ROE:** Høyere lønnsomhet bør gi høyere P/B. En bank *over* skyen er dyr i forhold til lønnsomheten, en bank
+  *under* er billig.
+* **Valuta:** Forholdstallene er valutanøytrale. Markedsverdi for SEK-aksjer regnes om til NOK med SEK/NOK fra Yahoo, og
+  kursen som er brukt, vises under tabellen.
+* Peer-kurser hentes hvert 15. minutt. Nøkkeltall hentes to ganger i døgnet.
 
 ## Beregninger
 

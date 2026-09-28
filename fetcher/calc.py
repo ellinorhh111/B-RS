@@ -11,7 +11,7 @@ Konvensjoner:
 """
 from __future__ import annotations
 
-from statistics import mean
+from statistics import mean, median
 
 # Fargegrenser for oppside (brøk). Grensene er inkluderende mot gul:
 #   oppside  > 15 %           → grønn
@@ -68,3 +68,41 @@ def pct_change(new: float | None, old: float | None) -> float | None:
 
 def to_pct(u: float | None, digits: int = 2) -> float | None:
     return None if u is None else round(u * 100, digits)
+
+
+# --- peers og verdsettelse -----------------------------------------------------
+
+def adjust_equity_certificate(pb: float | None, pe: float | None, is_ekb: bool,
+                              eierbrok: float | None) -> tuple[float | None, float | None, str | None]:
+    """Korrigerer Yahoos P/B og P/E for egenkapitalbevis (EK-bevis).
+
+    Intuisjon: I en sparebank med EK-bevis eier bevisholderne bare sin andel av
+    egenkapitalen og overskuddet (eierbrøken); resten tilhører grunnfondet.
+    Yahoo ser ut til å fordele HELE egenkapitalen og HELE overskuddet på bevisene,
+    så bokført verdi og resultat per bevis blir for høye, og P/B og P/E for lave.
+
+      Riktig P/B = Kurs / (Eierbrøk × Egenkapital / Antall bevis) = P/B_Yahoo / Eierbrøk
+      Riktig P/E = P/E_Yahoo / Eierbrøk
+
+    Eksempel: P/B_Yahoo 0,12 og eierbrøk 12 % → 0,12 / 0,12 = 1,0.
+    Uten kjent eierbrøk returneres None («–») i stedet for et misvisende tall.
+    Direkteavkastning og ROE påvirkes ikke og korrigeres derfor ikke her.
+    """
+    if not is_ekb:
+        return pb, pe, None
+    if not eierbrok:
+        return None, None, "EK-bevis: P/B og P/E vises ikke før eierbrøk er lagt inn (overrides.csv)"
+    return (None if pb is None else pb / eierbrok, None if pe is None else pe / eierbrok,
+            f"EK-bevis: P/B og P/E korrigert for eierbrøk {eierbrok * 100:.1f} %")
+
+
+def median_of(values) -> float | None:
+    """Median av tallene som finnes (None hoppes over). Median i stedet for snitt, så
+    én ekstrem verdi (f.eks. en nettmegler med P/B 10) ikke trekker sammenligningen skjevt."""
+    v = [x for x in values if x is not None]
+    return median(v) if v else None
+
+
+def average_of(values) -> float | None:
+    v = [x for x in values if x is not None]
+    return mean(v) if v else None

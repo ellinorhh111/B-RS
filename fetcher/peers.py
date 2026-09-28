@@ -145,3 +145,31 @@ def discover() -> int:
     print(report)
     (paths.data_dir() / "peers_rapport.txt").write_text(report + "\n", encoding="utf-8")
     return 0
+
+
+def approve() -> int:
+    """Gjør data/peers_forslag.csv om til config/peers.csv (med kolonnen ekb fylt ut).
+    En eksisterende peers.csv tas vare på som peers.csv.bak."""
+    from .csvio import read_rows
+    from .peerconfig import looks_like_equity_certificate
+
+    paths.ensure_dirs()
+    src = paths.data_dir() / "peers_forslag.csv"
+    if not src.exists():
+        print("Fant ikke data/peers_forslag.csv – kjør «peers finn» først.")
+        return 1
+    rows = read_rows(src)
+    dst = paths.config_dir() / "peers.csv"
+    if dst.exists():
+        dst.replace(dst.with_suffix(".csv.bak"))
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";", lineterminator="\n")
+    w.writerow(["ticker", "navn", "børs", "type", "ekb", "merknad"])
+    for r in rows:
+        ekb = "ja" if looks_like_equity_certificate(r.get("navn", "")) else "nei"
+        w.writerow([r.get("ticker"), r.get("navn"), r.get("bors"), r.get("type"), ekb, r.get("merknad", "")])
+    dst.write_bytes(BOM + buf.getvalue().encode("utf-8"))
+    n_ekb = sum(1 for r in rows if looks_like_equity_certificate(r.get("navn", "")))
+    print(f"config/peers.csv skrevet: {len(rows)} peers, hvorav {n_ekb} med egenkapitalbevis.")
+    print("Legg inn eierbrøk for EK-bevis i config/overrides.csv for å få riktige P/B og P/E.")
+    return 0
