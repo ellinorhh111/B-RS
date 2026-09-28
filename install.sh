@@ -31,7 +31,9 @@ else
   if ! command -v brew >/dev/null 2>&1; then
     echo "Homebrew er ikke installert."
     if ask "Installere Homebrew nå (offisielt skript fra brew.sh)?"; then
-      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+      # </dev/tty: Homebrew-installasjonen må lese tastetrykk direkte fra terminalen.
+      /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" </dev/tty \
+        || echo "Homebrew-installasjonen ble avbrutt. Se README for hvordan du installerer den manuelt."
       for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do [[ -x "$p" ]] && eval "$("$p" shellenv)" && break; done
     else
       echo "Hopper over Homebrew. Übersicht og Python må da installeres manuelt."
