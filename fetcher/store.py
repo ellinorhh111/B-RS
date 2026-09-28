@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .sources.prices_base import Quote
+from .sources.prices_base import Consensus, Quote
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS quotes (
@@ -22,6 +22,17 @@ CREATE TABLE IF NOT EXISTS prices_daily (
 CREATE TABLE IF NOT EXISTS source_status (
     name TEXT PRIMARY KEY,
     ok INTEGER NOT NULL, last_attempt TEXT NOT NULL, last_ok TEXT, error TEXT
+);
+CREATE TABLE IF NOT EXISTS consensus (
+    ticker TEXT PRIMARY KEY,
+    mean REAL, median REAL, high REAL, low REAL, n_analysts INTEGER,
+    recommendation TEXT, recommendation_mean REAL, currency TEXT,
+    source TEXT, fetched_at TEXT NOT NULL
+);
+-- Ett øyeblikksbilde per dag, til kursmålhistorikk i grafen senere.
+CREATE TABLE IF NOT EXISTS consensus_daily (
+    ticker TEXT NOT NULL, date TEXT NOT NULL, mean REAL, n_analysts INTEGER,
+    PRIMARY KEY (ticker, date)
 );
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
@@ -73,6 +84,33 @@ class Store:
     def get_quote(self, ticker: str) -> sqlite3.Row | None:
         with self.conn() as c:
             return c.execute("SELECT * FROM quotes WHERE ticker=?", (ticker,)).fetchone()
+
+    # --- konsensus ----------------------------------------------------------
+    def save_consensus(self, found: dict[str, Consensus], checked: list[str], source: str,
+                       now: datetime) -> None:
+        """Lagrer konsensus. Tickere som ble sjekket uten treff (ingen dekning) slettes,
+        slik at vi ikke viser en gammel konsensus som Yahoo ikke lenger har."""
+        today = now.date().isoformat()
+        with self.conn() as c:
+            for t in checked:
+                if t not in found:
+                    c.execute("DELETE FROM consensus WHERE ticker=?", (t,))
+            for k in found.values():
+                c.execute(
+                    "INSERT OR REPLACE INTO consensus VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (k.ticker, k.mean, k.median, k.high, k.low, k.n_analysts, k.recommendation,
+                     k.recommendation_mean, k.currency, source, _iso(now)),
+                )
+                c.execute("INSERT OR REPLACE INTO consensus_daily VALUES (?,?,?,?)",
+                          (k.ticker, today, k.mean, k.n_analysts))
+
+    def get_consensus(self, ticker: str) -> sqlite3.Row | None:
+        with self.conn() as c:
+            return c.execute("SELECT * FROM consensus WHERE ticker=?", (ticker,)).fetchone()
+
+    def get_source_status(self, name: str) -> sqlite3.Row | None:
+        with self.conn() as c:
+            return c.execute("SELECT * FROM source_status WHERE name=?", (name,)).fetchone()
 
     # --- kildestatus --------------------------------------------------------
     def set_source_status(self, name: str, ok: bool, now: datetime, error: str | None = None) -> None:

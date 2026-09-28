@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timezone
 
-from .prices_base import Quote, TickerInfo
+from .prices_base import Consensus, Quote, TickerInfo
 
 log = logging.getLogger(__name__)
 
@@ -86,8 +86,61 @@ def quote_from_history(ticker: str, df, meta: dict) -> Quote | None:
     )
 
 
+def _num(v) -> float | None:
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f and f > 0 else None  # NaN og 0 betyr «mangler» hos Yahoo
+
+
+def consensus_from_info(ticker: str, info: dict) -> Consensus | None:
+    """Plukker konsensusfeltene ut av Yahoos info-ordbok (modulen financialData).
+
+    Yahoo oppgir kursmål i aksjens handelsvaluta (NOK for .OL, SEK for .ST).
+    Mangler både snitt og antall analytikere, regnes det som «ingen dekning».
+    """
+    info = info or {}
+    mean = _num(info.get("targetMeanPrice"))
+    n = info.get("numberOfAnalystOpinions")
+    n = int(n) if isinstance(n, (int, float)) and n == n and n > 0 else None
+    if mean is None and n is None:
+        return None
+    rec = info.get("recommendationKey")
+    return Consensus(
+        ticker=ticker,
+        mean=mean,
+        median=_num(info.get("targetMedianPrice")),
+        high=_num(info.get("targetHighPrice")),
+        low=_num(info.get("targetLowPrice")),
+        n_analysts=n,
+        recommendation=rec if rec and rec != "none" else None,
+        recommendation_mean=_num(info.get("recommendationMean")),
+        currency=info.get("currency"),
+    )
+
+
 class YahooPriceSource:
     name = "yahoo"
+
+    def consensus(self, tickers: list[str]) -> tuple[dict[str, Consensus], dict[str, str]]:
+        import yfinance as yf
+
+        out: dict[str, Consensus] = {}
+        errors: dict[str, str] = {}
+        for t in tickers:
+            try:
+                c = consensus_from_info(t, yf.Ticker(t).info)
+                if c is None:
+                    # Ikke en feil: mange nordiske aksjer har ingen konsensus hos Yahoo.
+                    log.info("Ingen Yahoo-konsensus for %s", t)
+                else:
+                    out[t] = c
+            except Exception as e:  # noqa: BLE001
+                errors[t] = _short(e)
+                log.warning("Yahoo-konsensus feilet for %s: %s", t, errors[t])
+                log.debug("Detaljer for %s", t, exc_info=True)
+        return out, errors
 
     def quotes(self, tickers: list[str]) -> tuple[dict[str, Quote], dict[str, str]]:
         import yfinance as yf

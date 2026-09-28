@@ -3,20 +3,26 @@
   python -m fetcher run [--force]   hent data (launchd bruker denne)
   python -m fetcher verify          sjekk at tickerne i portfolio.csv gir riktige data
   python -m fetcher export          skriv data.json på nytt fra cache (uten nett)
+  python -m fetcher add-target B64  legg til kursmål (brukes av skjemaet i widgeten)
 """
 from __future__ import annotations
 
 import argparse
 import fcntl
+import json
 import logging
-from datetime import datetime
+from contextlib import contextmanager
+from datetime import datetime, timedelta
 
-from . import export, logsetup, paths, schedule
+from . import export, logsetup, paths, schedule, targets
 from .csvio import Holding, read_portfolio
 from .sources import PriceSource, get_price_source
-from .store import Store, utcnow
+from .store import Store, parse_iso, utcnow
 
 log = logging.getLogger("fetcher")
+
+# Konsensus endrer seg sjelden; å hente den sjeldnere skåner Yahoo og gjør kjøringen raskere.
+CONSENSUS_INTERVAL = timedelta(hours=6)
 
 
 def load_holdings(store: Store, now: datetime, errors: list[str]) -> list[Holding]:
@@ -31,6 +37,67 @@ def load_holdings(store: Store, now: datetime, errors: list[str]) -> list[Holdin
         return []
 
 
+def load_targets(store: Store, now: datetime, errors: list[str]) -> list[targets.BrokerTarget]:
+    try:
+        rows, warnings = targets.read_targets(paths.config_dir() / "broker_targets.csv")
+        store.set_source_status("broker_targets.csv", not warnings, now, "; ".join(warnings) or None)
+        errors.extend(warnings)
+        return rows
+    except Exception as e:  # noqa: BLE001
+        log.exception("Kunne ikke lese broker_targets.csv")
+        store.set_source_status("broker_targets.csv", False, now, str(e))
+        errors.append(f"broker_targets.csv: {e}")
+        return []
+
+
+def fetch_quotes(store: Store, source: PriceSource, tickers: list[str], now: datetime, errors: list[str]) -> None:
+    try:
+        quotes, qerrors = source.quotes(tickers)
+        store.save_quotes(quotes, source.name, now)
+        errors.extend(f"{source.name} {t}: {msg}" for t, msg in qerrors.items())
+        if quotes:
+            store.set_source_status(source.name, True, now,
+                                    "; ".join(f"{t}: {m}" for t, m in qerrors.items()) or None)
+        else:
+            store.set_source_status(source.name, False, now, next(iter(qerrors.values()), "ingen kurser hentet"))
+        log.info("Kurser: %d ok, %d feilet", len(quotes), len(qerrors))
+    except Exception as e:  # noqa: BLE001 – vis siste kjente data i stedet for å krasje
+        log.exception("Kurskilden feilet")
+        store.set_source_status(source.name, False, now, f"{type(e).__name__}: {e}")
+        errors.append(f"{source.name}: {e}")
+
+
+def consensus_due(store: Store, now: datetime, force: bool) -> bool:
+    st = store.get_source_status("yahoo_konsensus")
+    if force or st is None:
+        return True
+    last = parse_iso(st["last_attempt"])
+    return last is None or now - last >= CONSENSUS_INTERVAL
+
+
+def fetch_consensus(store: Store, source: PriceSource, tickers: list[str], now: datetime, errors: list[str]) -> None:
+    name = f"{source.name}_konsensus"
+    try:
+        found, cerrors = source.consensus(tickers)
+        ok_tickers = [t for t in tickers if t not in cerrors]
+        store.save_consensus(found, ok_tickers, source.name, now)
+        errors.extend(f"{name} {t}: {m}" for t, m in cerrors.items())
+        all_failed = cerrors and len(cerrors) == len(tickers)
+        store.set_source_status(name, not all_failed, now,
+                                "; ".join(f"{t}: {m}" for t, m in cerrors.items()) or None)
+        log.info("Konsensus: %d med dekning, %d uten, %d feilet",
+                 len(found), len(ok_tickers) - len(found), len(cerrors))
+    except Exception as e:  # noqa: BLE001
+        log.exception("Konsensus feilet")
+        store.set_source_status(name, False, now, f"{type(e).__name__}: {e}")
+        errors.append(f"{name}: {e}")
+
+
+def write_json(store: Store, holdings: list[Holding], now: datetime, errors: list[str],
+               broker_targets: list[targets.BrokerTarget]) -> None:
+    export.write(export.build(store, holdings, now, errors, broker_targets), paths.json_path())
+
+
 def run(force: bool = False, source: PriceSource | None = None, now: datetime | None = None) -> int:
     now = now or utcnow()
     store = Store(paths.db_path())
@@ -42,40 +109,66 @@ def run(force: bool = False, source: PriceSource | None = None, now: datetime | 
 
     errors: list[str] = []
     holdings = load_holdings(store, now, errors)
+    broker_targets = load_targets(store, now, errors)
     tickers = [h.ticker for h in holdings]
 
     if tickers:
         source = source or get_price_source()
-        try:
-            quotes, qerrors = source.quotes(tickers)
-            store.save_quotes(quotes, source.name, now)
-            for t, msg in qerrors.items():
-                errors.append(f"{source.name} {t}: {msg}")
-            if quotes:
-                store.set_source_status(source.name, True, now,
-                                        "; ".join(f"{t}: {m}" for t, m in qerrors.items()) or None)
-            else:
-                first = next(iter(qerrors.values()), "ingen kurser hentet")
-                store.set_source_status(source.name, False, now, first)
-            log.info("Kurser: %d ok, %d feilet", len(quotes), len(qerrors))
-        except Exception as e:  # noqa: BLE001 – vis siste kjente data i stedet for å krasje
-            log.exception("Kurskilden feilet")
-            store.set_source_status(source.name, False, now, f"{type(e).__name__}: {e}")
-            errors.append(f"{source.name}: {e}")
+        fetch_quotes(store, source, tickers, now, errors)
+        if consensus_due(store, now, force):
+            fetch_consensus(store, source, tickers, now, errors)
 
     store.set_last_run(now)
-    export.write(export.build(store, holdings, now, errors), paths.json_path())
+    write_json(store, holdings, now, errors, broker_targets)
     log.info("data.json skrevet (%d feil)", len(errors))
     return 0
 
 
-def export_only() -> int:
-    now = utcnow()
+def export_only(now: datetime | None = None) -> int:
+    now = now or utcnow()
     store = Store(paths.db_path())
     errors: list[str] = []
     holdings = load_holdings(store, now, errors)
-    export.write(export.build(store, holdings, now, errors), paths.json_path())
+    write_json(store, holdings, now, errors, load_targets(store, now, errors))
     return 0
+
+
+def add_target(b64: str, now: datetime | None = None) -> dict:
+    """Skriver et nytt kursmål fra skjemaet og oppdaterer data.json. Returnerer svar til widgeten."""
+    now = now or utcnow()
+    store = Store(paths.db_path())
+    holdings = read_portfolio(paths.config_dir() / "portfolio.csv")
+
+    def price(ticker: str) -> float | None:
+        q = store.get_quote(ticker)
+        return q["price"] if q else None
+
+    try:
+        row = targets.add_from_b64(b64, paths.config_dir() / "broker_targets.csv",
+                                   {h.ticker for h in holdings}, price,
+                                   now.astimezone(schedule.OSLO).date())
+    except targets.TargetError as e:
+        return {"ok": False, "feil": str(e)}
+    log.info("Nytt kursmål: %s", row)
+    export_only(now)
+    return {"ok": True, "melding": f"Lagret: {row['meglerhus']} {row['ticker']} {row['kursmål']:g}"}
+
+
+@contextmanager
+def run_lock():
+    """Hindrer at en manuell kjøring, launchd og skjemaet skriver samtidig."""
+    lock = open(paths.data_dir() / ".lock", "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        lock.close()
+        yield False
+        return
+    try:
+        yield True
+    finally:
+        fcntl.flock(lock, fcntl.LOCK_UN)
+        lock.close()
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -86,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("--force", action="store_true", help="hent uansett tidspunkt")
     sub.add_parser("verify", help="sjekk tickere mot kursleverandøren")
     sub.add_parser("export", help="skriv data.json fra cache")
+    a = sub.add_parser("add-target", help="legg til kursmål (base64-kodet JSON)")
+    a.add_argument("payload")
     args = p.parse_args(argv)
 
     logsetup.setup(verbose=args.verbose or args.cmd == "verify")
@@ -95,15 +190,26 @@ def main(argv: list[str] | None = None) -> int:
 
         return verify_portfolio()
 
-    # Lås: hindrer at en manuell kjøring og launchd skriver samtidig.
-    lock = open(paths.data_dir() / ".lock", "w")
-    try:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        log.warning("En annen kjøring pågår – avslutter")
+    if args.cmd == "add-target":
+        # Skjemaet venter på svaret, så vi venter på låsen (maks noen sekunder) i stedet for å gi opp.
+        import time
+
+        for _ in range(120):  # inntil 30 sek
+            with run_lock() as got:
+                if got:
+                    try:
+                        result = add_target(args.payload)
+                    except Exception as e:  # noqa: BLE001
+                        log.exception("add-target feilet")
+                        result = {"ok": False, "feil": f"Uventet feil: {e}"}
+                    print(json.dumps(result, ensure_ascii=False))
+                    return 0
+            time.sleep(0.25)
+        print(json.dumps({"ok": False, "feil": "Datahenting pågår – prøv igjen om litt"}, ensure_ascii=False))
         return 0
-    try:
+
+    with run_lock() as got:
+        if not got:
+            log.warning("En annen kjøring pågår – avslutter")
+            return 0
         return run(force=args.force) if args.cmd == "run" else export_only()
-    finally:
-        fcntl.flock(lock, fcntl.LOCK_UN)
-        lock.close()

@@ -10,27 +10,57 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from . import schedule
+from . import calc, schedule, targets
 from .csvio import Holding
 from .store import Store, parse_iso
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Visningsnavn for kildene i widgeten.
-SOURCE_LABELS = {"yahoo": "Yahoo Finance (kurser)", "portfolio.csv": "portfolio.csv"}
+SOURCE_LABELS = {
+    "yahoo": "Yahoo Finance (kurser)",
+    "yahoo_konsensus": "Yahoo Finance (konsensus)",
+    "portfolio.csv": "portfolio.csv",
+    "broker_targets.csv": "broker_targets.csv",
+}
+
+# Yahoos anbefalingsnøkler på norsk.
+RECOMMENDATION_NO = {
+    "strong_buy": "sterkt kjøp", "buy": "kjøp", "hold": "hold",
+    "underperform": "svak", "sell": "selg", "strong_sell": "sterkt selg",
+}
+
+
+def _consensus(row, price: float | None) -> dict | None:
+    if row is None:
+        return None
+    up = calc.upside(row["mean"], price)
+    return {
+        "snitt": row["mean"], "median": row["median"], "hoy": row["high"], "lav": row["low"],
+        "antall": row["n_analysts"],
+        "anbefaling": RECOMMENDATION_NO.get(row["recommendation"] or "", row["recommendation"]),
+        "anbefaling_snitt": row["recommendation_mean"],
+        "hentet": row["fetched_at"],
+        "oppside_pct": calc.to_pct(up),
+        "farge": calc.color(up),
+    }
 
 
 def _round(v: float | None, n: int = 4) -> float | None:
     return None if v is None else round(v, n)
 
 
-def build(store: Store, holdings: list[Holding], now: datetime, run_errors: list[str]) -> dict:
+def build(store: Store, holdings: list[Holding], now: datetime, run_errors: list[str],
+          broker_targets: list[targets.BrokerTarget] | None = None) -> dict:
+    broker_targets = broker_targets or []
+    today = now.astimezone(schedule.OSLO).date()
     companies = []
     for h in holdings:
         row = store.get_quote(h.ticker)
         price = row["price"] if row else None
         prev = row["prev_close"] if row else None
         change = (price - prev) / prev * 100 if price is not None and prev else None
+        own_up = calc.upside(h.mitt_kursmal, price)
         companies.append({
             "ticker": h.ticker,
             "navn": h.navn,
@@ -42,9 +72,15 @@ def build(store: Store, holdings: list[Holding], now: datetime, run_errors: list
             "kurstid": row["market_time"] if row else None,
             "hentet": row["fetched_at"] if row else None,
             "kilde": row["source"] if row else None,
-            "mitt_kursmal": h.mitt_kursmal,
-            "dato_kursmal": h.dato_kursmal.isoformat() if h.dato_kursmal else None,
             "kommentar": h.kommentar or None,
+            "konsensus": _consensus(store.get_consensus(h.ticker), price),
+            "megler": targets.summarize(broker_targets, h.ticker, price, today),
+            "mitt": {
+                "kursmal": h.mitt_kursmal,
+                "dato": h.dato_kursmal.isoformat() if h.dato_kursmal else None,
+                "oppside_pct": calc.to_pct(own_up),
+                "farge": calc.color(own_up),
+            },
         })
 
     sources = []
@@ -68,6 +104,10 @@ def build(store: Store, holdings: list[Holding], now: datetime, run_errors: list
         "selskaper": companies,
         "kilder": sources,
         "feil": run_errors,
+        "meglerhus": targets.known_brokers(broker_targets),
+        "forrige_per_megler": targets.last_target_by_broker(broker_targets),
+        "grenser": {"gronn_over_pct": calc.GREEN_ABOVE * 100, "rod_under_pct": calc.RED_BELOW * 100,
+                    "gammel_etter_dager": calc.OLD_TARGET_DAYS},
     }
 
 

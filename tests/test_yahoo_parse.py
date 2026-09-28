@@ -45,3 +45,17 @@ def test_no_data_returns_none():
 def test_nan_rows_skipped():
     q = quote_from_history("X.OL", df([("2026-09-24", 100.0), ("2026-09-25", float("nan"))]), {})
     assert q.price == 100.0 and q.prev_close is None and q.change_pct is None
+
+
+def test_consensus_from_info():
+    from fetcher.sources.prices_yahoo import consensus_from_info
+
+    c = consensus_from_info("PROT.OL", {"targetMeanPrice": 450.0, "targetHighPrice": 500, "targetLowPrice": 380,
+                                        "targetMedianPrice": 455, "numberOfAnalystOpinions": 5,
+                                        "recommendationKey": "buy", "recommendationMean": 2.0, "currency": "NOK"})
+    assert (c.mean, c.high, c.low, c.n_analysts, c.recommendation) == (450.0, 500, 380, 5, "buy")
+    # Ingen dekning: Yahoo gir ofte recommendationKey="none" og ingen kursmål
+    assert consensus_from_info("SBNOR.OL", {"recommendationKey": "none", "currency": "NOK"}) is None
+    # NaN/0 behandles som manglende
+    c2 = consensus_from_info("X.OL", {"targetMeanPrice": float("nan"), "numberOfAnalystOpinions": 2})
+    assert c2.mean is None and c2.n_analysts == 2

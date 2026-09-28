@@ -44,8 +44,27 @@ class TickerInfo:
     error: str | None = None
 
 
+@dataclass
+class Consensus:
+    """Analytikerkonsensus (kursmål og anbefaling) fra kursleverandøren."""
+
+    ticker: str
+    mean: float | None  # gjennomsnittlig kursmål
+    median: float | None
+    high: float | None
+    low: float | None
+    n_analysts: int | None
+    recommendation: str | None  # strong_buy / buy / hold / underperform / sell
+    recommendation_mean: float | None  # 1 = sterkt kjøp … 5 = selg
+    currency: str | None  # kursmålet er i aksjens handelsvaluta
+
+
 class PriceSource(Protocol):
     name: str
+
+    def consensus(self, tickers: list[str]) -> tuple[dict[str, Consensus], dict[str, str]]:
+        """Returnerer (konsensus per ticker, feilmelding per ticker som feilet)."""
+        ...
 
     def quotes(self, tickers: list[str]) -> tuple[dict[str, Quote], dict[str, str]]:
         """Returnerer (kurser per ticker, feilmelding per ticker som feilet)."""
