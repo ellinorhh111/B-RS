@@ -34,6 +34,15 @@ MFN_RSS = """<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><
 <link>https://mfn.se/ob/a/protector-forsikring/mandatory-2</link><pubDate>Fri, 25 Sep 2026 06:00:00 GMT</pubDate></item>
 </channel></rss>""".encode()
 
+DI_RSS = """<?xml version="1.0"?><rss version="2.0"><channel>
+<item><title>Riksbanken lämnar styrräntan oförändrad</title><link>https://www.di.se/1</link>
+<pubDate>Mon, 28 Sep 2026 07:30:00 GMT</pubDate></item>
+<item><title>Noba ökar utlåningen i Tyskland</title><link>https://www.di.se/2</link>
+<pubDate>Mon, 28 Sep 2026 07:40:00 GMT</pubDate></item>
+<item><title>Volvo Cars ny elbil</title><link>https://www.di.se/3</link>
+<pubDate>Mon, 28 Sep 2026 07:50:00 GMT</pubDate></item>
+</channel></rss>""".encode()
+
 ROBOTS_OK = b"User-agent: *\nAllow: /\n"
 
 
@@ -57,6 +66,8 @@ def fake_web(monkeypatch):
             return 200, b'<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
         if "news.google.com" in url:
             return 200, GOOGLE_RSS
+        if "di.se" in url:
+            return 200, DI_RSS
         return 404, b""
 
     monkeypatch.setattr(web, "_get", fake_get)

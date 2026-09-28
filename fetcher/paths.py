@@ -39,6 +39,10 @@ def log_path() -> Path:
     return data_dir() / "logs" / "fetcher.log"
 
 
+# fil → kolonne som må finnes (ellers byttes filen ut med ny standardversjon)
+MIGRATE = {"sektorsok.csv": "nokkelord", "nyhetskilder.csv": "utelat"}
+
+
 def ensure_dirs() -> None:
     """Lager config/ og data/ og kopierer inn standardfiler som mangler.
 
@@ -50,6 +54,18 @@ def ensure_dirs() -> None:
         dst = config_dir() / src.name
         if src.is_file() and not dst.exists():
             shutil.copy2(src, dst)
+    # Oppgrader konfigurasjonsfiler fra eldre versjoner som mangler en ny kolonne.
+    # Den gamle filen tas vare på som .bak.
+    from .csvio import column_key, read_text
+
+    for name, needed in MIGRATE.items():
+        f = config_dir() / name
+        if f.exists():
+            header = read_text(f).splitlines()[0] if f.stat().st_size else ""
+            cols = {column_key(c) for c in header.replace(",", ";").split(";")}
+            if needed not in cols:
+                f.replace(f.with_suffix(".csv.bak"))
+                shutil.copy2(defaults_dir() / name, f)
     # Sørg for at CSV-filene har BOM, ellers viser Excel æøå feil (f.eks. «kursm√•l»).
     from .csvio import normalize_file
 

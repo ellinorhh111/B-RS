@@ -52,13 +52,26 @@ def or_query(phrases: list[str]) -> str:
     return " OR ".join(f'"{p}"' for p in phrases if p)
 
 
-# Direkte avisfeeder som prøves i tillegg til Google News. Hver brukes bare hvis
-# `probe` viser at den finnes OG robots.txt tillater den; ellers hoppes den over.
+# Avisenes egne RSS-feeder: navn → (adresse, språk). Brukes bare hvis robots.txt
+# tillater dem; feiler de, hoppes de over uten varsel. E24 og DI er bekreftet (probe 28.09.2026).
 DIRECT_FEEDS = {
-    "E24": "https://e24.no/rss2/",
-    "Dagens Industri": "https://www.di.se/rss",
-    "DN": "https://services.dn.no/api/feed/rss/",
-    "Finansavisen": "https://www.finansavisen.no/rss",
+    "E24": ("https://e24.no/rss2/", "no"),
+    "Dagens Industri": ("https://www.di.se/rss", "sv"),
+    "DN": ("https://www.dn.no/rss", "no"),
+    "Finansavisen": ("https://www.finansavisen.no/rss.xml", "no"),
+}
+
+# Ekstra kandidater som bare sjekkes av `probe` (ikke brukt ennå). Adressene er
+# gjetninger; probe viser om de finnes og om robots.txt tillater dem.
+PROBE_CANDIDATES = {
+    "Google News forretning (NO, uten søk)": "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=no&gl=NO&ceid=NO:no",
+    "Google News forretning (SE, uten søk)": "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=sv&gl=SE&ceid=SE:sv",
+    "DN (alternativ)": "https://services.dn.no/api/feed/rss/",
+    "Finansavisen (alternativ)": "https://www.finansavisen.no/feed",
+    "E24 børs og finans": "https://e24.no/rss2/?seksjon=boers-og-finans",
+    "MFN feed-vert": "https://feed.mfn.se/v1/feed",
+    "Newsweb API (Oslo, JSON)": "https://api3.oslo.oslobors.no/v1/newsreader/list?issuer=PROT",
+    "Nasdaq Nordic nyheter (Stockholm)": "https://api.news.eu.nasdaq.com/news/query.action?type=rss&showAttachments=true&showCnsSpecific=true&company=NOBA+Bank+Group",
 }
 
 

@@ -55,10 +55,30 @@ def read_company_config(path: Path) -> list[CompanyNewsConfig]:
 
 
 def read_sector_config(path: Path) -> list[tuple[str, str, str]]:
+    """(språk, tema, Google-søk) per rad."""
     if not path.exists():
         return []
     return [(r.get("sprak", "no") or "no", r.get("tema", ""), r["sok"]) for r in read_rows(path)
             if r.get("sok") and (r.get("sprak") or "no") in news_rss.GOOGLE_LOCALES]
+
+
+def read_sector_keywords(path: Path) -> list[tuple[str, str, list[str]]]:
+    """(språk, tema, nøkkelord) per rad – brukes til å plukke sektorsaker fra avisenes egne feeder."""
+    if not path.exists():
+        return []
+    return [(r.get("sprak", "no") or "no", r.get("tema", ""), _split(r.get("nokkelord")))
+            for r in read_rows(path) if r.get("nokkelord")]
+
+
+def sector_topic(title: str, lang: str | None, keywords: list[tuple[str, str, list[str]]]) -> str | None:
+    """Første tema der et nøkkelord står i tittelen (samme språk som feeden, hvis kjent)."""
+    t = title.lower()
+    for kl, topic, words in keywords:
+        if lang and kl != lang:
+            continue
+        if any(re.search(r"\b" + re.escape(w.lower()), t) for w in words):
+            return topic
+    return None
 
 
 def title_key(title: str) -> str:
@@ -143,9 +163,10 @@ class NewsRun:
         self._status("google_news", errs, total)
         self._suggest(rows)
 
-    def direct_feeds(self, cfgs: list[CompanyNewsConfig]) -> None:
-        """Avisenes egne RSS-feeder (valgfritt). Bare titler som nevner et av selskapene tas med."""
-        for name, url in news_rss.DIRECT_FEEDS.items():
+    def direct_feeds(self, cfgs: list[CompanyNewsConfig], sector_kw: list[tuple[str, str, list[str]]]) -> None:
+        """Avisenes egne RSS-feeder. Titler som nevner et av selskapene blir selskapsnyheter;
+        titler med et sektor-nøkkelord (sektorsok.csv) blir sektornyheter."""
+        for name, (url, lang) in news_rss.DIRECT_FEEDS.items():
             key = "rss_" + name
             try:
                 items = news_rss.fetch_feed(url, name)
@@ -153,6 +174,10 @@ class NewsRun:
                 self.store.set_source_status(key, False, self.now, str(e))
                 continue
             rows = [_row("selskap", c.ticker, "nyhet", i) for i in items for c in cfgs if relevant(i.title, c.must, c.exclude)]
+            for i in items:
+                topic = sector_topic(i.title, lang, sector_kw)
+                if topic:
+                    rows.append(_row("sektor", None, "nyhet", i, lang, topic))
             self.store.save_news(rows, self.now)
             self.store.set_source_status(key, True, self.now)
             self._suggest(rows)
@@ -202,7 +227,7 @@ def run_all(store: Store, config_dir: Path, now: datetime, errors: list[str], pr
     run.filings(cfgs)  # hver kjøring (hvert 5. min i åpningstiden)
     if due(store, "last_company_news", COMPANY_NEWS_INTERVAL, now, force):
         run.company_news(cfgs)
-        run.direct_feeds(cfgs)
+        run.direct_feeds(cfgs, read_sector_keywords(config_dir / "sektorsok.csv"))
         store.set_meta("last_company_news", now.isoformat())
     if due(store, "last_sector_news", SECTOR_NEWS_INTERVAL, now, force):
         run.sector_news(read_sector_config(config_dir / "sektorsok.csv"))

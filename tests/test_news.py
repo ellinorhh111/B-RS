@@ -110,3 +110,25 @@ def test_news_source_failure_does_not_stop_prices(root, monkeypatch):
     assert next(c for c in d["selskaper"] if c["ticker"] == "PROT.OL")["kurs"] == 110.0
     mfn = next(s for s in d["kilder"] if s["navn"] == "mfn")
     assert mfn["ok"] is False and "robots.txt utilgjengelig" in mfn["feil"]
+
+
+def test_direct_feed_gives_company_and_sector_news(root):
+    main.run(force=True, source=FakeSource(), now=NOW)
+    d = read_json()
+    di_sector = [n for n in d["sektor"] if n["kilde"] == "Dagens Industri"]
+    got = {(n["tittel"], n["tema"]) for n in di_sector}
+    assert ("Riksbanken lämnar styrräntan oförändrad", "Ränta") in got
+    assert ("Noba ökar utlåningen i Tyskland", "Utlåning") in got  # utlånsvekst er sektorrelevant
+    noba = next(c for c in d["selskaper"] if c["ticker"] == "NOBA.ST")
+    assert any(n["tittel"] == "Noba ökar utlåningen i Tyskland" for n in noba["nyheter"])
+    assert not any("Volvo" in n["tittel"] for n in d["sektor"])
+
+
+def test_old_config_is_migrated_with_backup(tmp_path, monkeypatch):
+    monkeypatch.setenv("PORTEFOLJE_ROOT", str(tmp_path))
+    (tmp_path / "config").mkdir()
+    old = tmp_path / "config" / "sektorsok.csv"
+    old.write_text("språk;tema;søk\nno;Rente;Norges Bank rentemøte\n", encoding="utf-8")
+    paths.ensure_dirs()
+    assert "nøkkelord" in old.read_text(encoding="utf-8-sig").splitlines()[0]
+    assert (tmp_path / "config" / "sektorsok.csv.bak").exists()
