@@ -132,3 +132,11 @@ def test_old_config_is_migrated_with_backup(tmp_path, monkeypatch):
     paths.ensure_dirs()
     assert "nøkkelord" in old.read_text(encoding="utf-8-sig").splitlines()[0]
     assert (tmp_path / "config" / "sektorsok.csv.bak").exists()
+
+
+def test_deep_probe_runs_offline(root, capsys):
+    from fetcher import probe
+
+    assert probe.deep_probe() == 0
+    out = capsys.readouterr().out
+    assert "NEWSWEB API" in out and (root / "data" / "probe_dyp.txt").exists()

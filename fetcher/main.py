@@ -231,7 +231,8 @@ def main(argv: list[str] | None = None) -> int:
     f = sub.add_parser("forslag", help="bekreft eller forkast et kursmålforslag")
     f.add_argument("action", choices=["bekreft", "forkast"])
     f.add_argument("id")
-    sub.add_parser("probe", help="sjekk nyhetskildene (robots.txt og RSS)")
+    pr = sub.add_parser("probe", help="sjekk nyhetskildene (robots.txt og RSS)")
+    pr.add_argument("--dyp", action="store_true", help="let etter RSS-lenker og vis Newsweb-svar")
     args = p.parse_args(argv)
 
     logsetup.setup(verbose=args.verbose or args.cmd == "verify")
@@ -242,9 +243,9 @@ def main(argv: list[str] | None = None) -> int:
         return verify_portfolio()
 
     if args.cmd == "probe":
-        from .probe import probe
+        from .probe import deep_probe, probe
 
-        return probe()
+        return deep_probe() if args.dyp else probe()
 
     if args.cmd in ("add-target", "forslag"):
         # Skjemaet venter på svaret, så vi venter på låsen (maks noen sekunder) i stedet for å gi opp.
