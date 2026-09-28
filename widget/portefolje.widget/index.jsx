@@ -171,6 +171,26 @@ const fmtNewsTime = (iso) => {
 };
 const shortTicker = (t) => (t || "").split(".")[0];
 
+// Newsweb-kategorier kan være svært lange («ANNEN INFORMASJONSPLIKTIG REGULATORISK
+// INFORMASJON»). I lista vises en kort merkelapp; hele kategorien står i verktøytipset.
+const SHORT_TOPIC = [
+  [/MELDEPLIKTIG HANDEL|PRIMÆRINNSIDER|MANAGERS' TRANSACTIONS/i, "Innsidehandel"],
+  [/INNSIDEINFORMASJON|INSIDE INFORMATION/i, "Innsideinfo"],
+  [/FLAGGING|MAJOR SHAREHOLD/i, "Flagging"],
+  [/RENTE/i, "Rente"],
+  [/KVARTAL|HALVÅR|ÅRSRAPPORT|FINANSIELL RAPPORT|RAPPORT/i, "Rapport"],
+  [/GENERALFORSAMLING|REPRESENTANTSKAP/i, "Generalforsamling"],
+  [/UTBYTTE|EX DATO|DIVIDEND/i, "Utbytte"],
+  [/TILBAKEKJØP|BUY-?BACK/i, "Tilbakekjøp"],
+  [/PRESSEMELDING/i, "Pressemelding"],
+  [/REGULATORISK/i, "Regulatorisk"],
+];
+const shortTopic = (t) => {
+  if (!t) return null;
+  for (const [rx, label] of SHORT_TOPIC) if (rx.test(t)) return label;
+  return t.length > 16 ? t.charAt(0) + t.slice(1, 15).toLowerCase() + "…" : t.charAt(0) + t.slice(1).toLowerCase();
+};
+
 // ---------- stil ----------
 export const className = `
   top: 0; left: 0;
@@ -180,7 +200,7 @@ export const className = `
 
 const box = css`
   position: absolute;
-  width: 540px;
+  width: 580px;
   color: #e4e4e6;
   background: rgba(22, 22, 24, 0.88);
   backdrop-filter: blur(18px);
@@ -251,7 +271,7 @@ const box = css`
   .news .nt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .news .src { color: #8e8e93; font-size: 11px; white-space: nowrap; }
   .scroll { max-height: 280px; overflow-y: auto; }
-  .tag { display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.4px; padding: 0 5px;
+  .tag { flex: none; display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.4px; padding: 0 5px;
          border-radius: 4px; margin-right: 5px; vertical-align: 1px; }
   .tag.bm { color: #16161a; background: #e6cb74; }
   .tag.tema { color: #b9c3d6; background: rgba(138,180,248,0.12); font-weight: 500; }
@@ -410,14 +430,13 @@ const NewsList = ({ items, showTicker }) =>
   items && items.length ? (
     <ul className="news">
       {items.map((n) => (
-        <li key={n.id} onClick={() => openLink(n.lenke)} title={`${n.tittel}\n${n.kilde || ""}`}>
+        <li key={n.id} onClick={() => openLink(n.lenke)}
+            title={`${n.tittel}\n${n.kilde || ""}${n.tema ? " · " + n.tema : ""}`}>
           <span className="tm">{fmtNewsTime(n.tid)}</span>
           {showTicker ? <span className="tk">{shortTicker(n.ticker)}</span> : null}
-          <span className="nt">
-            {n.type === "børsmelding" ? <span className="tag bm">BØRSMELDING</span> : null}
-            {n.tema ? <span className="tag tema">{n.tema}</span> : null}
-            {n.tittel}
-          </span>
+          {n.type === "børsmelding" ? <span className="tag bm">BØRSMELDING</span> : null}
+          <span className="nt">{n.tittel}</span>
+          {n.tema ? <span className="tag tema">{shortTopic(n.tema)}</span> : null}
           <span className="src">{n.kilde}</span>
         </li>
       ))}
