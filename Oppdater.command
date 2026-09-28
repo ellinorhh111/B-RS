@@ -1,9 +1,10 @@
 #!/bin/bash
 # Dobbeltklikk i Finder: henter ny kode, sjekker kildene, henter data og oppdaterer widgeten.
-# Alt som skrives ut lagres i data/siste_kjoring.txt og åpnes i TekstEdit til slutt.
+# Alt som skrives ut lagres i data/kjoringer/kjoring-<tidspunkt>.txt og åpnes i TekstEdit til slutt.
+# (Egen fil per kjøring: TekstEdit viser ellers gammelt innhold hvis filen allerede er åpen.)
 cd "$(dirname "$0")" || exit 1
-mkdir -p data
-LOG="data/siste_kjoring.txt"
+mkdir -p data/kjoringer
+LOG="data/kjoringer/kjoring-$(date '+%Y%m%d-%H%M%S').txt"
 {
   echo "=== Oppdatering $(date '+%Y-%m-%d %H:%M') ==="
   echo; echo "--- Henter ny kode (git pull) ---"
@@ -16,4 +17,5 @@ LOG="data/siste_kjoring.txt"
   osascript -e 'tell application id "tracesOf.Uebersicht" to refresh' 2>&1 && echo "Widgeten er oppdatert."
   echo; echo "=== Ferdig ==="
 } | tee "$LOG"
+cp "$LOG" data/siste_kjoring.txt
 open -e "$LOG"
