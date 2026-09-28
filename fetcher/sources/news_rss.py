@@ -1,12 +1,8 @@
-"""RSS/Atom-kilder for nyheter og børsmeldinger. Kun RSS – ingen skraping av nettsider.
+"""RSS/Atom for nyheter. Kun RSS – ingen skraping av nettsider.
 
-Kilder:
-  * MFN.se (Modular Finance): børsmeldinger for nordiske noterte selskaper,
-    både Oslo (speiler Newsweb, «/ob/»-lenker) og Stockholm. Én RSS per selskap.
-  * Google News RSS: søk på norsk og svensk. Dekker E24, DN, Finansavisen,
-    Dagens Industri m.fl. uten at vi henter noe direkte fra avisene.
-  * Direkte RSS fra aviser, kun hvis feeden finnes og robots.txt tillater det
-    (sjekkes med `python -m fetcher probe`).
+Avisenes egne RSS-feeder brukes når robots.txt tillater det (sjekkes med
+`python -m fetcher probe`). MFN.se og Google News ble vurdert, men robots.txt
+forbyr automatisk henting av RSS der («Disallow: *.rss$» / «Disallow: /»).
 """
 from __future__ import annotations
 
@@ -15,7 +11,7 @@ import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
-from urllib.parse import quote_plus, urlsplit
+from urllib.parse import urlsplit
 
 from . import web
 
@@ -30,50 +26,13 @@ class NewsItem:
 
 # --- adresser -----------------------------------------------------------------
 
-def mfn_feed_url(slug: str) -> str:
-    """MFN-feed for ett selskap. «all» = alle meldinger (også Newsweb-speilet for Oslo)."""
-    return f"https://mfn.se/all/a/{slug}.rss"
-
-
-GOOGLE_LOCALES = {
-    "no": "hl=no&gl=NO&ceid=NO:no",
-    "sv": "hl=sv&gl=SE&ceid=SE:sv",
-}
-
-
-def google_news_url(query: str, lang: str = "no", days: int | None = 14) -> str:
-    """Google News RSS-søk. `when:14d` begrenser til nyere saker."""
-    q = f"{query} when:{days}d" if days else query
-    return f"https://news.google.com/rss/search?q={quote_plus(q)}&{GOOGLE_LOCALES[lang]}"
-
-
-def or_query(phrases: list[str]) -> str:
-    """["Sparebanken Norge", "SBNOR"] → '"Sparebanken Norge" OR "SBNOR"'."""
-    return " OR ".join(f'"{p}"' for p in phrases if p)
-
-
 # Avisenes egne RSS-feeder: navn → (adresse, språk). Brukes bare hvis robots.txt
-# tillater dem; feiler de, hoppes de over uten varsel. E24 og DI er bekreftet (probe 28.09.2026).
+# tillater dem. E24 og DI er bekreftet (probe 28.09.2026). DN og Finansavisen har
+# ingen RSS vi har funnet; legg dem til her hvis du finner en adresse som virker.
 DIRECT_FEEDS = {
     "E24": ("https://e24.no/rss2/", "no"),
     "Dagens Industri": ("https://www.di.se/rss", "sv"),
-    "DN": ("https://www.dn.no/rss", "no"),
-    "Finansavisen": ("https://www.finansavisen.no/rss.xml", "no"),
 }
-
-# Ekstra kandidater som bare sjekkes av `probe` (ikke brukt ennå). Adressene er
-# gjetninger; probe viser om de finnes og om robots.txt tillater dem.
-PROBE_CANDIDATES = {
-    "Google News forretning (NO, uten søk)": "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=no&gl=NO&ceid=NO:no",
-    "Google News forretning (SE, uten søk)": "https://news.google.com/rss/headlines/section/topic/BUSINESS?hl=sv&gl=SE&ceid=SE:sv",
-    "DN (alternativ)": "https://services.dn.no/api/feed/rss/",
-    "Finansavisen (alternativ)": "https://www.finansavisen.no/feed",
-    "E24 børs og finans": "https://e24.no/rss2/?seksjon=boers-og-finans",
-    "MFN feed-vert": "https://feed.mfn.se/v1/feed",
-    "Newsweb API (Oslo, JSON)": "https://api3.oslo.oslobors.no/v1/newsreader/list?issuer=PROT",
-    "Nasdaq Nordic nyheter (Stockholm)": "https://api.news.eu.nasdaq.com/news/query.action?type=rss&showAttachments=true&showCnsSpecific=true&company=NOBA+Bank+Group",
-}
-
 
 # --- parsing ------------------------------------------------------------------
 

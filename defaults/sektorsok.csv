@@ -1,17 +1,17 @@
-﻿språk;tema;søk;nøkkelord
-no;Rente;Norges Bank rentemøte;Norges Bank|rentemøte|styringsrenten|rentebeslutning
-no;Tilsyn;Finanstilsynet bank;Finanstilsynet
-no;Boliglån;boliglån bankene;boliglån|boligrente|utlånsforskrift
-no;Forbrukslån;forbrukslån;forbrukslån|kredittkort|inkasso
-no;Utlånsvekst;utlånsvekst;utlånsvekst|kredittvekst|K2
-no;Tapsavsetninger;tapsavsetninger bank;tapsavsetning|utlånstap|mislighold
-no;Forsikring;combined ratio forsikring;combined ratio|skadeprosent|forsikringsselskap|Gjensidige|Storebrand|Protector|If Skade|Tryg
-no;Resultat;kvartalsresultat sparebank;sparebank|DNB|egenkapitalbevis|bankresultat
-sv;Ränta;Riksbanken styrräntan;Riksbanken|styrräntan|räntebesked
-sv;Tillsyn;Finansinspektionen bank;Finansinspektionen
-sv;Bolån;bolån bankerna;bolån|bolåneränta|amorteringskrav
-sv;Konsumtionslån;konsumtionslån;konsumtionslån|privatlån|kortkredit
-sv;Utlåning;utlåningstillväxt;utlåning|kredittillväxt
-sv;Kreditförluster;kreditförluster bank;kreditförlust|kreditförluster
-sv;Försäkring;combined ratio försäkring;combined ratio|försäkringsbolag|Sampo|Länsförsäkringar|Folksam
-sv;Resultat;kvartalsrapport bank;Handelsbanken|SEB|Swedbank|Nordea|Avanza|Nordnet|TF Bank|Norion|Resurs
+﻿språk;tema;nøkkelord
+no;Rente;Norges Bank|rentemøte|styringsrenten|rentebeslutning
+no;Tilsyn;Finanstilsynet
+no;Boliglån;boliglån|boligrente|utlånsforskrift
+no;Forbrukslån;forbrukslån|kredittkort|inkasso
+no;Utlånsvekst;utlånsvekst|kredittvekst|K2
+no;Tapsavsetninger;tapsavsetning|utlånstap|mislighold
+no;Forsikring;combined ratio|skadeprosent|forsikringsselskap|Gjensidige|Storebrand|Protector|If Skade|Tryg
+no;Resultat;sparebank|DNB|egenkapitalbevis|bankresultat
+sv;Ränta;Riksbanken|styrräntan|räntebesked
+sv;Tillsyn;Finansinspektionen
+sv;Bolån;bolån|bolåneränta|amorteringskrav
+sv;Konsumtionslån;konsumtionslån|privatlån|kortkredit
+sv;Utlåning;utlåning|kredittillväxt
+sv;Kreditförluster;kreditförlust|kreditförluster
+sv;Försäkring;combined ratio|försäkringsbolag|Sampo|Länsförsäkringar|Folksam
+sv;Resultat;Handelsbanken|SEB|Swedbank|Nordea|Avanza|Nordnet|TF Bank|Norion|Resurs

@@ -204,6 +204,10 @@ class Store:
                 (name, int(ok), _iso(now), last_ok, error),
             )
 
+    def delete_source_status(self, name: str) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM source_status WHERE name=?", (name,))
+
     def source_statuses(self) -> list[sqlite3.Row]:
         with self.conn() as c:
             return c.execute("SELECT * FROM source_status ORDER BY name").fetchall()

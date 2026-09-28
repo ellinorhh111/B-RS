@@ -1,10 +1,11 @@
 """Henter børsmeldinger, selskapsnyheter, sektornyheter og kursmålforslag.
 
-Kildestatus (vises i widgeten):
-  mfn          – børsmeldinger (MFN.se, dekker både Oslo og Stockholm)
-  google_news  – selskapsnyheter (Google News, norsk + svensk)
-  google_sektor – sektorfeed (Google News)
-  rss_<avis>   – direkte avisfeeder; VALGFRIE: feiler de, dekkes de av Google News
+Kilder (valgt etter robots.txt-sjekk 28.09.2026, se README):
+  newsweb        – børsmeldinger Oslo (Euronext Oslo Børs)
+  nasdaq         – Nasdaq Stockholms børsvarsler (handelsstopp, notering o.l.)
+  rss_E24, rss_Dagens Industri – avisenes egne RSS: selskapsnyheter, sektorsaker, kursmålforslag
+
+Ikke brukt: MFN.se («Disallow: *.rss$») og Google News («Disallow: /»).
 """
 from __future__ import annotations
 
@@ -18,22 +19,22 @@ from pathlib import Path
 
 from . import suggestions as sugg_mod
 from .csvio import read_rows
+from .sources import filings as filings_src
 from .sources import news_rss, web
 from .store import Store
 
 log = logging.getLogger(__name__)
 
 COMPANY_NEWS_INTERVAL = timedelta(minutes=15)
-SECTOR_NEWS_INTERVAL = timedelta(minutes=60)
+FILINGS_DAYS = 3  # vanlig henting: siste 3 dager
+FILINGS_DAYS_FULL = 30  # første gang / --force: siste 30 dager
+REMOVED_SOURCES = ("mfn", "google_news", "google_sektor", "rss_DN", "rss_Finansavisen")
 KEEP_DAYS = 60
-TARGET_WORDS_QUERY = "kursmål OR hever OR senker OR riktkurs OR \"target price\""
 
 
 @dataclass
 class CompanyNewsConfig:
     ticker: str
-    mfn: str | None
-    search: list[str]  # søkefraser til Google News
     must: list[str]  # minst ett av disse må stå i tittelen
     exclude: list[str] = None  # titler med disse ordene forkastes (støy, f.eks. produktnavn)
 
@@ -49,17 +50,8 @@ def read_company_config(path: Path) -> list[CompanyNewsConfig]:
     for r in read_rows(path):
         t = (r.get("ticker") or "").upper()
         if t:
-            out.append(CompanyNewsConfig(t, r.get("mfn") or None, _split(r.get("sokeord")), _split(r.get("trefford")),
-                                         _split(r.get("utelat"))))
+            out.append(CompanyNewsConfig(t, _split(r.get("trefford")), _split(r.get("utelat"))))
     return out
-
-
-def read_sector_config(path: Path) -> list[tuple[str, str, str]]:
-    """(språk, tema, Google-søk) per rad."""
-    if not path.exists():
-        return []
-    return [(r.get("sprak", "no") or "no", r.get("tema", ""), r["sok"]) for r in read_rows(path)
-            if r.get("sok") and (r.get("sprak") or "no") in news_rss.GOOGLE_LOCALES]
 
 
 def read_sector_keywords(path: Path) -> list[tuple[str, str, list[str]]]:
@@ -127,40 +119,30 @@ class NewsRun:
             self.errors.extend(f"{name}: {e}" for e in errs[:3])
 
     # --- børsmeldinger -----------------------------------------------------
-    def filings(self, cfgs: list[CompanyNewsConfig]) -> None:
-        errs, rows, total = [], [], 0
-        for c in cfgs:
-            if not c.mfn:
-                continue
-            total += 1
+    def filings(self, cfgs: list[CompanyNewsConfig], days: int) -> None:
+        tickers = [c.ticker for c in cfgs]
+        to = self.now.date()
+        frm = to - timedelta(days=days)
+        rows: list[dict] = []
+        if any(t.endswith(".OL") for t in tickers):
             try:
-                items = news_rss.fetch_feed(news_rss.mfn_feed_url(c.mfn), "MFN")
-                rows += [_row("selskap", c.ticker, "borsmelding",
-                              news_rss.NewsItem(i.title, i.link, _filing_source(i.link), i.published))
-                         for i in items]
+                for ticker, items in filings_src.newsweb_items(tickers, frm, to).items():
+                    rows += [_row("selskap", ticker, "borsmelding", i, "no", cat) for i, cat in items]
+                self.store.set_source_status("newsweb", True, self.now)
             except (web.NotAllowed, web.FetchError, ValueError) as e:
-                errs.append(f"{c.ticker}: {e}")
-        self.new_filings = [r for r in self.store.save_news(rows, self.now)]
-        self._status("mfn", errs, total)
-        self._suggest(rows)
-
-    # --- selskapsnyheter ----------------------------------------------------
-    def company_news(self, cfgs: list[CompanyNewsConfig]) -> None:
-        errs, rows, total = [], [], 0
-        for c in cfgs:
-            if not c.search:
-                continue
-            q = news_rss.or_query(c.search)
-            queries = [(q, "no"), (q, "sv"), (f"({q}) ({TARGET_WORDS_QUERY})", "no")]
-            for query, lang in queries:
-                total += 1
-                try:
-                    items = news_rss.fetch_feed(news_rss.google_news_url(query, lang), "Google News")
-                    rows += [_row("selskap", c.ticker, "nyhet", i, lang) for i in items if relevant(i.title, c.must, c.exclude)]
-                except (web.NotAllowed, web.FetchError, ValueError) as e:
-                    errs.append(f"{c.ticker}/{lang}: {e}")
-        self.store.save_news(rows, self.now)
-        self._status("google_news", errs, total)
+                self.store.set_source_status("newsweb", False, self.now, str(e))
+                self.errors.append(f"newsweb: {e}")
+        st = [c for c in cfgs if not c.ticker.endswith(".OL")]
+        if st:
+            try:
+                notices = filings_src.nasdaq_notices()
+                rows += [_row("selskap", c.ticker, "borsmelding", i, "en", "BØRSVARSEL")
+                         for i in notices for c in st if relevant(i.title, c.must, c.exclude)]
+                self.store.set_source_status("nasdaq", True, self.now)
+            except (web.NotAllowed, web.FetchError, ValueError) as e:
+                self.store.set_source_status("nasdaq", False, self.now, str(e))
+                self.errors.append(f"nasdaq: {e}")
+        self.new_filings = self.store.save_news(rows, self.now)
         self._suggest(rows)
 
     def direct_feeds(self, cfgs: list[CompanyNewsConfig], sector_kw: list[tuple[str, str, list[str]]]) -> None:
@@ -182,18 +164,6 @@ class NewsRun:
             self.store.set_source_status(key, True, self.now)
             self._suggest(rows)
 
-    # --- sektor --------------------------------------------------------------
-    def sector_news(self, queries: list[tuple[str, str, str]]) -> None:
-        errs, rows = [], []
-        for lang, topic, q in queries:
-            try:
-                items = news_rss.fetch_feed(news_rss.google_news_url(q, lang, days=7), "Google News")
-                rows += [_row("sektor", None, "nyhet", i, lang, topic) for i in items[:15]]
-            except (web.NotAllowed, web.FetchError, ValueError) as e:
-                errs.append(f"{topic}: {e}")
-        self.store.save_news(rows, self.now)
-        self._status("google_sektor", errs, len(queries))
-
     # --- kursmålforslag -------------------------------------------------------
     def _suggest(self, rows: list[dict]) -> None:
         found = []
@@ -208,11 +178,6 @@ class NewsRun:
         self.new_suggestions += self.store.save_suggestions(found, self.now)
 
 
-def _filing_source(link: str) -> str:
-    # MFN-lenker med «/ob/» er Newsweb-meldinger fra Oslo Børs.
-    return "Newsweb via MFN" if "/ob/" in link else "MFN"
-
-
 def due(store: Store, key: str, interval: timedelta, now: datetime, force: bool) -> bool:
     from .store import parse_iso
 
@@ -224,14 +189,14 @@ def run_all(store: Store, config_dir: Path, now: datetime, errors: list[str], pr
             force: bool = False) -> NewsRun:
     cfgs = read_company_config(config_dir / "nyhetskilder.csv")
     run = NewsRun(store, now, errors, price_lookup)
-    run.filings(cfgs)  # hver kjøring (hvert 5. min i åpningstiden)
+    for name in REMOVED_SOURCES:  # rydd bort status for kilder vi ikke lenger bruker
+        store.delete_source_status(name)
+    full = force or store.get_meta("last_filings") is None
+    run.filings(cfgs, FILINGS_DAYS_FULL if full else FILINGS_DAYS)  # hver kjøring
+    store.set_meta("last_filings", now.isoformat())
     if due(store, "last_company_news", COMPANY_NEWS_INTERVAL, now, force):
-        run.company_news(cfgs)
         run.direct_feeds(cfgs, read_sector_keywords(config_dir / "sektorsok.csv"))
         store.set_meta("last_company_news", now.isoformat())
-    if due(store, "last_sector_news", SECTOR_NEWS_INTERVAL, now, force):
-        run.sector_news(read_sector_config(config_dir / "sektorsok.csv"))
-        store.set_meta("last_sector_news", now.isoformat())
     store.prune_news(now - timedelta(days=KEEP_DAYS))
     log.info("Nyheter: %d nye børsmeldinger, %d nye kursmålforslag", len(run.new_filings), len(run.new_suggestions))
     return run

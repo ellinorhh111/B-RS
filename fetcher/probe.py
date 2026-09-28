@@ -12,7 +12,7 @@ from html import unescape
 from urllib.parse import urljoin, urlsplit
 
 from . import news, paths
-from .sources import news_rss, web
+from .sources import filings, news_rss, web
 from .store import utcnow
 
 
@@ -39,19 +39,13 @@ def _check(label: str, url: str, rss: bool = True) -> list[str]:
     return lines
 
 
-# Sider der vi leter etter RSS-lenker (bare lesing av én side per vert, robots.txt respekteres).
+# Sider der vi leter etter RSS-lenker (én side per vert, robots.txt respekteres).
 DEEP_PAGES = {
-    "Nasdaq Nordic – offisielle RSS-feeder": "https://subscribe.news.eu.nasdaq.com/rss",
-    "Cision – Noba": "https://news.cision.com/se/noba-bank-group-ab",
-    "Noba IR": "https://www.noba.bank/investor-relations",
-    "Newsweb (forside)": "https://newsweb.oslobors.no/",
+    "DN": "https://www.dn.no/",
+    "Finansavisen": "https://www.finansavisen.no/",
+    "E24": "https://e24.no/",
+    "Dagens Industri": "https://www.di.se/",
 }
-# Newsweb-API-varianter: vi viser starten av svaret for å se formatet.
-NEWSWEB_VARIANTS = [
-    "https://api3.oslo.oslobors.no/v1/newsreader/list?issuer=PROT",
-    "https://api3.oslo.oslobors.no/v1/newsreader/list?category=&issuer=PROT&fromDate=&toDate=&market=&messageTitle=",
-    "https://api3.oslo.oslobors.no/v1/newsreader/list?fromDate={frm}&toDate={to}",
-]
 
 _FEED_LINK = re.compile(r"""(?:href|src)=["']([^"']*(?:rss|feed|atom)[^"']*)["']""", re.I)
 
@@ -70,26 +64,12 @@ def _find_feeds(label: str, url: str) -> list[str]:
     return [f"✓ {label}: {len(links)} mulige feed-lenker"] + [f"    {u}" for u in links[:25]]
 
 
-def _show(url: str) -> list[str]:
-    try:
-        d = web.check(url)
-        if not d.allowed:
-            return [f"✗ {url}", f"    robots.txt tillater ikke ({d.rule})"]
-        body = web.fetch(url).decode("utf-8", errors="replace")
-    except (web.FetchError, web.NotAllowed) as e:
-        return [f"✗ {url}", f"    {e}"]
-    return [f"✓ {url}", "    " + body[:700].replace("\n", " ")]
-
-
 def deep_probe() -> int:
+    """Leter etter RSS-lenker på avisenes forsider (for å finne feeds til DN/Finansavisen)."""
     paths.ensure_dirs()
-    today = utcnow().date()
-    lines = [f"Dyp kildesjekk – {utcnow():%Y-%m-%d %H:%M} UTC", "", "RSS-LENKER PÅ SIDER"]
+    lines = [f"Dyp kildesjekk – {utcnow():%Y-%m-%d %H:%M} UTC", "", "RSS-LENKER PÅ FORSIDER"]
     for label, url in DEEP_PAGES.items():
         lines += _find_feeds(label, url)
-    lines += ["", "NEWSWEB API – SVAR (første 700 tegn)"]
-    for u in NEWSWEB_VARIANTS:
-        lines += _show(u.format(frm=(today - timedelta(days=7)).isoformat(), to=today.isoformat()))
     report = "\n".join(lines)
     print(report)
     (paths.data_dir() / "probe_dyp.txt").write_text(report + "\n", encoding="utf-8")
@@ -99,26 +79,28 @@ def deep_probe() -> int:
 def probe() -> int:
     paths.ensure_dirs()
     cfgs = news.read_company_config(paths.config_dir() / "nyhetskilder.csv")
-    lines = [f"Kildesjekk – {utcnow():%Y-%m-%d %H:%M} UTC", "", "BØRSMELDINGER (MFN.se)"]
-    for c in cfgs:
-        if c.mfn:
-            lines += _check(f"MFN {c.ticker} ({c.mfn})", news_rss.mfn_feed_url(c.mfn))
-    lines += ["", "SELSKAPSNYHETER (Google News)"]
-    for c in cfgs:
-        if c.search:
-            q = news_rss.or_query(c.search)
-            lines += _check(f"Google News {c.ticker} norsk", news_rss.google_news_url(q, "no"))
-            lines += _check(f"Google News {c.ticker} svensk", news_rss.google_news_url(q, "sv"))
-    lines += ["", "SEKTOR (Google News, to eksempler)"]
-    for lang, topic, q in news.read_sector_config(paths.config_dir() / "sektorsok.csv")[:1] + \
-            [x for x in news.read_sector_config(paths.config_dir() / "sektorsok.csv") if x[0] == "sv"][:1]:
-        lines += _check(f"Sektor {topic} ({lang})", news_rss.google_news_url(q, lang, days=7))
-    lines += ["", "DIREKTE AVISFEEDER (valgfrie – dekkes ellers av Google News)"]
+    tickers = [c.ticker for c in cfgs]
+    today = utcnow().date()
+    lines = [f"Kildesjekk – {utcnow():%Y-%m-%d %H:%M} UTC", "", "BØRSMELDINGER OSLO (Newsweb)"]
+    url = filings.NEWSWEB_LIST.format(frm=(today - timedelta(days=14)).isoformat(), to=today.isoformat())
+    try:
+        d = web.check(url)
+        if not d.allowed:
+            lines += [f"✗ Newsweb: robots.txt tillater ikke ({d.rule})"]
+        else:
+            per = filings.newsweb_items(tickers, today - timedelta(days=14), today)
+            lines += [f"✓ Newsweb: robots.txt tillater ({d.rule or 'ingen regel traff'})"]
+            for t, items in per.items():
+                lines.append(f"    {t}: {len(items)} meldinger siste 14 dager"
+                             + (f" – nyeste: {items[0][0].title[:70]}" if items else ""))
+    except (web.FetchError, web.NotAllowed, ValueError) as e:
+        lines += [f"✗ Newsweb: {e}"]
+    lines += ["", "BØRSVARSLER STOCKHOLM (Nasdaq)"]
+    lines += _check("Nasdaq mainMarketNotices", filings.NASDAQ_NOTICES)
+    lines += ["", "AVISFEEDER (selskapsnyheter, sektor, kursmålforslag)"]
     for name, (url, _lang) in news_rss.DIRECT_FEEDS.items():
         lines += _check(name, url)
-    lines += ["", "ALTERNATIVE KILDER (kandidater – brukes ikke ennå)"]
-    for name, url in news_rss.PROBE_CANDIDATES.items():
-        lines += _check(name, url, rss=not ("JSON" in name or url.endswith("/feed")))
+    lines += ["", "IKKE I BRUK (robots.txt forbyr): MFN.se («Disallow: *.rss$»), Google News («Disallow: /»)"]
     report = "\n".join(lines)
     print(report)
     (paths.data_dir() / "probe_report.txt").write_text(report + "\n", encoding="utf-8")

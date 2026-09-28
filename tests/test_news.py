@@ -54,19 +54,21 @@ def test_full_run_news_filings_suggestions(root):
     d = read_json()
     prot = next(c for c in d["selskaper"] if c["ticker"] == "PROT.OL")
     titles = [n["tittel"] for n in prot["nyheter"]]
-    # Samme sak fra E24 og Finansavisen vises én gang; sykkelhjelmen filtreres bort (irrelevant)
-    assert titles.count("Pareto hever kursmålet på Protector til 480 kroner") == 1
+    # Fra E24-feeden: Protector-saken tas med, sykkelhjelmen filtreres bort (utelat-ord)
+    assert "Pareto hever kursmålet på Protector til 480 kroner" in titles
     assert not any("sykkelhjelm" in t for t in titles)
     filings = [n for n in prot["nyheter"] if n["type"] == "børsmelding"]
-    assert len(filings) == 2 and filings[0]["kilde"] == "Newsweb via MFN"
+    # To meldinger med lik tittel på ulike dager holdes adskilt; testmelding og andre selskaper utelates
+    assert len(filings) == 2 and filings[0]["kilde"] == "Newsweb" and filings[0]["tema"] == "MELDEPLIKTIG HANDEL"
+    assert filings[0]["lenke"] == "https://newsweb.oslobors.no/message/1001"
+    noba = next(c for c in d["selskaper"] if c["ticker"] == "NOBA.ST")
+    assert [n["tittel"] for n in noba["nyheter"] if n["type"] == "børsmelding"] == [
+        "NOBA Bank Group AB (publ) is included in OMXS30 index"]
     assert d["siste_nyheter"][0]["tid"] >= d["siste_nyheter"][-1]["tid"]  # nyest først
-    assert len(d["sektor"]) > 0
-    # Kursmålforslag: kurs 110 i FakeSource → 480 er > 4x → forkastes som urimelig.
-    assert d["forslag"] == []
-    mfn = next(s for s in d["kilder"] if s["navn"] == "mfn")
-    assert mfn["ok"] is True
-    rss = [s for s in d["kilder"] if s["navn"].startswith("rss_")]
-    assert rss and all(s["valgfri"] for s in rss)
+    assert d["forslag"] == []  # kurs 110 i FakeSource → 480 er > 4x → forkastes
+    names = {s["navn"]: s for s in d["kilder"]}
+    assert names["newsweb"]["ok"] and names["nasdaq"]["ok"]
+    assert "mfn" not in names and "google_news" not in names
 
 
 class PricedSource(FakeSource):
@@ -108,8 +110,8 @@ def test_news_source_failure_does_not_stop_prices(root, monkeypatch):
     main.run(force=True, source=FakeSource(), now=NOW)
     d = read_json()
     assert next(c for c in d["selskaper"] if c["ticker"] == "PROT.OL")["kurs"] == 110.0
-    mfn = next(s for s in d["kilder"] if s["navn"] == "mfn")
-    assert mfn["ok"] is False and "robots.txt utilgjengelig" in mfn["feil"]
+    nw = next(s for s in d["kilder"] if s["navn"] == "newsweb")
+    assert nw["ok"] is False and "robots.txt utilgjengelig" in nw["feil"]
 
 
 def test_direct_feed_gives_company_and_sector_news(root):
@@ -128,7 +130,7 @@ def test_old_config_is_migrated_with_backup(tmp_path, monkeypatch):
     monkeypatch.setenv("PORTEFOLJE_ROOT", str(tmp_path))
     (tmp_path / "config").mkdir()
     old = tmp_path / "config" / "sektorsok.csv"
-    old.write_text("språk;tema;søk\nno;Rente;Norges Bank rentemøte\n", encoding="utf-8")
+    old.write_text("språk;tema;søk\nno;Rente;Norges Bank rentemøte\n", encoding="utf-8")  # uten nøkkelord
     paths.ensure_dirs()
     assert "nøkkelord" in old.read_text(encoding="utf-8-sig").splitlines()[0]
     assert (tmp_path / "config" / "sektorsok.csv.bak").exists()
@@ -139,4 +141,12 @@ def test_deep_probe_runs_offline(root, capsys):
 
     assert probe.deep_probe() == 0
     out = capsys.readouterr().out
-    assert "NEWSWEB API" in out and (root / "data" / "probe_dyp.txt").exists()
+    assert "RSS-LENKER" in out and (root / "data" / "probe_dyp.txt").exists()
+
+
+def test_probe_runs_offline(root, capsys):
+    from fetcher import probe
+
+    assert probe.probe() == 0
+    out = capsys.readouterr().out
+    assert "✓ Newsweb" in out and "PROT.OL: 2 meldinger" in out and "✓ E24" in out

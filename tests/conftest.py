@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -43,6 +44,26 @@ DI_RSS = """<?xml version="1.0"?><rss version="2.0"><channel>
 <pubDate>Mon, 28 Sep 2026 07:50:00 GMT</pubDate></item>
 </channel></rss>""".encode()
 
+NEWSWEB_JSON = json.dumps({"header": {"result.val": 0}, "data": {"messages": [
+    {"messageId": 1001, "title": "Mandatory notification of trade", "issuerSign": "PROT",
+     "category": [{"category_no": "MELDEPLIKTIG HANDEL"}], "publishedTime": "2026-09-28T06:00:00.000Z"},
+    {"messageId": 1002, "title": "Mandatory notification of trade", "issuerSign": "PROT",
+     "category": [{"category_no": "MELDEPLIKTIG HANDEL"}], "publishedTime": "2026-09-25T06:00:00.000Z"},
+    {"messageId": 1003, "title": "Rentefastsettelse", "issuerSign": "SBNOR",
+     "category": [{"category_no": "ANNEN INFORMASJONSPLIKTIG REGULATORISK INFORMASJON"}],
+     "publishedTime": "2026-09-28T10:30:00.000Z"},
+    {"messageId": 1004, "title": "Major Shareholder Disclosure", "issuerSign": "GENO",
+     "category": [{"category_no": "FLAGGING"}], "publishedTime": "2026-09-28T15:16:57.226Z"},
+    {"messageId": 1005, "title": "Test", "issuerSign": "PROT", "test": True, "publishedTime": "2026-09-28T15:00:00Z"},
+]}}).encode()
+
+NASDAQ_RSS = """<?xml version="1.0"?><rss version="2.0"><channel>
+<item><title>NOBA Bank Group AB (publ) is included in OMXS30 index</title><link>https://view.news.eu.nasdaq.com/view?id=1</link>
+<pubDate>Mon, 28 Sep 2026 12:00:00 GMT</pubDate></item>
+<item><title>Trading halt in Some Other AB</title><link>https://view.news.eu.nasdaq.com/view?id=2</link>
+<pubDate>Mon, 28 Sep 2026 12:30:00 GMT</pubDate></item>
+</channel></rss>""".encode()
+
 ROBOTS_OK = b"User-agent: *\nAllow: /\n"
 
 
@@ -60,12 +81,12 @@ def fake_web(monkeypatch):
             if "finansavisen" in url:
                 return 200, b"User-agent: *\nDisallow: /\n"
             return 200, ROBOTS_OK
-        if "mfn.se" in url and "protector" in url:
-            return 200, MFN_RSS
-        if "mfn.se" in url:
-            return 200, b'<?xml version="1.0"?><rss version="2.0"><channel></channel></rss>'
-        if "news.google.com" in url:
-            return 200, GOOGLE_RSS
+        if "api3.oslo.oslobors.no" in url:
+            return 200, NEWSWEB_JSON
+        if "api.news.eu.nasdaq.com" in url:
+            return 200, NASDAQ_RSS
+        if "e24.no" in url:
+            return 200, GOOGLE_RSS  # vanlig RSS-format (uten <source> brukes kildenavnet)
         if "di.se" in url:
             return 200, DI_RSS
         return 404, b""

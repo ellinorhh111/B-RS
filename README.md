@@ -57,6 +57,7 @@ cd ~/portefolje-widget && git pull && bash install.sh
 | `.venv/bin/python -m fetcher verify` | Sjekker at hver ticker gir data for riktig selskap (valuta, børs og navn). Rapporten lagres i `data/verify_report.txt` |
 | `.venv/bin/python -m fetcher -v run --force` | Henter data nå, uansett klokkeslett |
 | `.venv/bin/python -m fetcher probe` | Sjekker at hver nyhetskilde finnes og at robots.txt tillater henting. Rapporten lagres i `data/probe_report.txt` |
+| `.venv/bin/python -m fetcher probe --dyp` | Leter etter RSS-lenker på avisenes forsider (DN, Finansavisen m.fl.) |
 | `.venv/bin/python -m fetcher export` | Skriver `data.json` på nytt fra cachen, uten nett. Kjør denne etter at du har redigert en CSV-fil |
 
 ## Redigere portfolio.csv
@@ -109,29 +110,40 @@ Rader med feil hoppes over og vises som et gult varsel i widgeten, med radnummer
 
 | Hva | Kilde | Hvor ofte |
 |---|---|---|
-| Børsmeldinger (merket **BØRSMELDING**) | MFN.se, RSS per selskap. Dekker Oslo (speiler Newsweb) og Stockholm | Hver henting (hvert 5. min i åpningstiden) |
-| Selskapsnyheter | Google News RSS på norsk og svensk. Dekker E24, DN, Finansavisen, DI m.fl. | Hvert 15. min |
-| Direkte avisfeeder | E24, DN, Finansavisen, DI. Brukes bare hvis feeden finnes og robots.txt tillater det | Hvert 15. min |
-| Sektorfeed bank/forsikring | Google News-søk fra `config/sektorsok.csv` | Hvert 60. min |
+| Børsmeldinger Oslo (merket **BØRSMELDING**) | Newsweb (Euronext Oslo Børs) | Hver henting (hvert 5. min i åpningstiden) |
+| Børsvarsler Stockholm | Nasdaq Nordics offisielle RSS (handelsstopp, indeksendringer o.l.) | Hver henting |
+| Selskapsnyheter, sektor og kursmålforslag | RSS fra E24 og Dagens Industri | Hvert 15. min |
 
-**Lovlighet:** Bare RSS brukes, og ingen nettsider skrapes. Robots.txt sjekkes for hver vert før henting, og det
-som ikke er tillatt, hentes ikke. Artikler bak betalingsmur leses ikke; vi viser bare overskrift, kilde og lenke.
-Kjør `probe` for å se status for hver kilde.
+### Hvilke kilder er vurdert, og hvorfor
 
-**Duplikater:** Samme overskrift samme dag vises én gang, uansett hvor mange aviser som har den. En børsmelding
-går foran en nyhetssak med samme tittel.
+Alle kilder er sjekket mot robots.txt etter standarden RFC 9309 (`python -m fetcher probe`, 28.09.2026):
 
-**Søkeord per selskap** står i `config/nyhetskilder.csv`:
+| Kilde | Status | Begrunnelse |
+|---|---|---|
+| Newsweb | **Brukes** | robots.txt tillater. Det er samme tjeneste som newsweb.oslobors.no bruker selv, ikke et dokumentert API, så formatet kan endre seg. Vi henter bare de siste dagene |
+| Nasdaq Nordic RSS | **Brukes** | Offisielle RSS-feeder. Inneholder Nasdaqs egne børsvarsler, ikke selskapenes pressemeldinger |
+| E24, Dagens Industri | **Brukes** | Offisielle RSS-feeder, og robots.txt tillater |
+| MFN.se | Brukes ikke | robots.txt: `Disallow: *.rss$`. RSS er bevisst stengt |
+| Google News | Brukes ikke | robots.txt: `Disallow: /` |
+| DN, Finansavisen | Brukes ikke | Fant ingen RSS-adresse som virker. Kjør `probe --dyp` for å lete etter nye |
+
+**Begrensning:** Nobas egne børsmeldinger (kvartalsrapporter, pressemeldinger) distribueres via MFN, som ikke tillater
+automatisk henting. Noba dekkes derfor av Dagens Industri og Nasdaqs børsvarsler. De fullstendige meldingene finner du på
+[mfn.se/all/a/noba](https://mfn.se/all/a/noba).
+
+**Duplikater:** Samme overskrift samme dag vises én gang. En børsmelding går foran en nyhetssak med samme tittel.
+Kun overskrift, kilde og lenke vises; artikler bak betalingsmur leses ikke.
+
+**Filtre per selskap** står i `config/nyhetskilder.csv`:
 
 | Kolonne | Eksempel | Betydning |
 |---|---|---|
-| ticker | `PROT.OL` | Som i portfolio.csv |
-| mfn | `protector-forsikring` | Navnet i adressen mfn.se/all/a/**protector-forsikring** |
-| søkeord | `Protector Forsikring\|Protector ASA` | Søk i Google News. Skill flere med \| |
-| trefford | `Protector` | Minst ett av disse må stå i overskriften |
+| ticker | `PROT.OL` | Som i portfolio.csv. Oslo-tickere hentes fra Newsweb automatisk |
+| trefford | `Protector` | Minst ett av disse må stå i overskriften (skill flere med \|) |
 | utelat | `hjelm\|sykkel` | Overskrifter med disse ordene forkastes (støy) |
 
-**Sektorsøk** står i `config/sektorsok.csv` med kolonnene språk (`no`/`sv`), tema og søk.
+**Sektorfeeden** styres av `config/sektorsok.csv` (språk, tema, nøkkelord). En avissak med et nøkkelord i overskriften
+havner under sektoren med temaet som merkelapp.
 
 ### Kursmålforslag fra overskrifter
 

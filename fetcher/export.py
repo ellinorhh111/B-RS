@@ -22,9 +22,8 @@ SOURCE_LABELS = {
     "yahoo_konsensus": "Yahoo Finance (konsensus)",
     "portfolio.csv": "portfolio.csv",
     "broker_targets.csv": "broker_targets.csv",
-    "mfn": "Børsmeldinger (MFN)",
-    "google_news": "Google News (selskaper)",
-    "google_sektor": "Google News (sektor)",
+    "newsweb": "Newsweb (børsmeldinger Oslo)",
+    "nasdaq": "Nasdaq Stockholm (børsvarsler)",
 }
 # Valgfrie kilder: feiler de, vises det ikke som varsel (de dekkes av Google News).
 OPTIONAL_PREFIX = "rss_"
