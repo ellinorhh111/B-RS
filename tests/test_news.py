@@ -150,3 +150,28 @@ def test_probe_runs_offline(root, capsys):
     assert probe.probe() == 0
     out = capsys.readouterr().out
     assert "✓ Newsweb" in out and "PROT.OL: 2 meldinger" in out and "✓ E24" in out
+
+
+def test_newsweb_overflow_splits_period(monkeypatch):
+    import json as _json
+    from datetime import date
+    from urllib.parse import parse_qs, urlsplit
+
+    from fetcher.sources import filings
+
+    requested = []
+
+    def fake_fetch(url):
+        q = parse_qs(urlsplit(url).query)
+        frm, to = q["fromDate"][0], q["toDate"][0]
+        requested.append((frm, to))
+        if frm != to:  # alt over én dag er «kuttet»
+            return _json.dumps({"data": {"messages": [], "overflow": True}}).encode()
+        return _json.dumps({"data": {"overflow": False, "messages": [
+            {"messageId": int(frm.replace("-", "")), "title": f"Melding {frm}", "issuerSign": "PROT",
+             "publishedTime": frm + "T08:00:00Z"}]}}).encode()
+
+    monkeypatch.setattr(filings.web, "fetch", fake_fetch)
+    got = filings.newsweb_items(["PROT.OL"], date(2026, 9, 21), date(2026, 9, 28))
+    assert len(got["PROT.OL"]) == 8  # én per dag, ingen tapt
+    assert ("2026-09-21", "2026-09-21") in requested
