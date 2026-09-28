@@ -1,0 +1,1 @@
+"""Datainnhenting for porteføljewidgeten (Übersicht)."""

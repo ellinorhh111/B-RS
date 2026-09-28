@@ -1,0 +1,8 @@
+# Dine egne data og konfigurasjon (kopieres fra defaults/ ved installasjon)
+/config/
+/data/
+/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
