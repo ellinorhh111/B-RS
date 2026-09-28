@@ -58,6 +58,7 @@ def parse_newsweb_page(body: bytes) -> tuple[list[dict], bool]:
         cats = m.get("category") or []
         out.append({
             "sign": sign,
+            "utsteder": (m.get("issuerName") or "").strip(),
             "tittel": title,
             "kategori": (cats[0].get("category_no") if cats and isinstance(cats[0], dict) else None),
             "publisert": _dt(m.get("publishedTime")),

@@ -59,6 +59,27 @@ class Consensus:
     currency: str | None  # kursmålet er i aksjens handelsvaluta
 
 
+@dataclass
+class Fundamentals:
+    """Nøkkeltall. Alle forholdstall er valutanøytrale; markedsverdi er i handelsvalutaen.
+
+    Brøker, ikke prosent: roe 0,14 = 14 %, direkteavkastning 0,05 = 5 %.
+    None = mangler hos kilden (vises som «–»).
+    """
+
+    ticker: str
+    name: str | None
+    quote_type: str | None
+    exchange: str | None
+    currency: str | None
+    price: float | None
+    pb: float | None
+    pe: float | None
+    div_yield: float | None
+    roe: float | None
+    market_cap: float | None
+
+
 class PriceSource(Protocol):
     name: str
 
@@ -71,3 +92,5 @@ class PriceSource(Protocol):
         ...
 
     def describe(self, ticker: str) -> TickerInfo: ...
+
+    def fundamentals(self, tickers: list[str]) -> tuple[dict[str, Fundamentals], dict[str, str]]: ...

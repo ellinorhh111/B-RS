@@ -45,14 +45,22 @@ DI_RSS = """<?xml version="1.0"?><rss version="2.0"><channel>
 </channel></rss>""".encode()
 
 NEWSWEB_JSON = json.dumps({"header": {"result.val": 0}, "data": {"messages": [
-    {"messageId": 1001, "title": "Mandatory notification of trade", "issuerSign": "PROT",
+    {"messageId": 1001, "title": "Mandatory notification of trade", "issuerSign": "PROT", "issuerName": "Protector Forsikring ASA",
      "category": [{"category_no": "MELDEPLIKTIG HANDEL"}], "publishedTime": "2026-09-28T06:00:00.000Z"},
     {"messageId": 1002, "title": "Mandatory notification of trade", "issuerSign": "PROT",
      "category": [{"category_no": "MELDEPLIKTIG HANDEL"}], "publishedTime": "2026-09-25T06:00:00.000Z"},
     {"messageId": 1003, "title": "Rentefastsettelse", "issuerSign": "SBNOR",
      "category": [{"category_no": "ANNEN INFORMASJONSPLIKTIG REGULATORISK INFORMASJON"}],
      "publishedTime": "2026-09-28T10:30:00.000Z"},
-    {"messageId": 1004, "title": "Major Shareholder Disclosure", "issuerSign": "GENO",
+    {"messageId": 1006, "title": "Q2 2026", "issuerSign": "MING", "issuerName": "SpareBank 1 SMN",
+     "publishedTime": "2026-09-10T06:00:00Z"},
+    {"messageId": 1007, "title": "Rentefastsettelse", "issuerSign": "SPABOL", "issuerName": "Sparebanken Øst Boligkreditt AS",
+     "publishedTime": "2026-09-10T06:00:00Z"},
+    {"messageId": 1008, "title": "Q2", "issuerSign": "GJF", "issuerName": "Gjensidige Forsikring ASA",
+     "publishedTime": "2026-09-11T06:00:00Z"},
+    {"messageId": 1009, "title": "Q2", "issuerSign": "XBANKOBL", "issuerName": "Obligasjonsbank ASA",
+     "publishedTime": "2026-09-11T06:00:00Z"},
+    {"messageId": 1004, "title": "Major Shareholder Disclosure", "issuerSign": "GENO", "issuerName": "General Oceans ASA",
      "category": [{"category_no": "FLAGGING"}], "publishedTime": "2026-09-28T15:16:57.226Z"},
     {"messageId": 1005, "title": "Test", "issuerSign": "PROT", "test": True, "publishedTime": "2026-09-28T15:00:00Z"},
 ]}}).encode()

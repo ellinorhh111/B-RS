@@ -231,6 +231,8 @@ def main(argv: list[str] | None = None) -> int:
     f = sub.add_parser("forslag", help="bekreft eller forkast et kursmålforslag")
     f.add_argument("action", choices=["bekreft", "forkast"])
     f.add_argument("id")
+    pe = sub.add_parser("peers", help="finn og verifiser peers (Oslo via Newsweb, Stockholm via kandidatliste)")
+    pe.add_argument("action", choices=["finn"])
     pr = sub.add_parser("probe", help="sjekk nyhetskildene (robots.txt og RSS)")
     pr.add_argument("--dyp", action="store_true", help="let etter RSS-lenker og vis Newsweb-svar")
     args = p.parse_args(argv)
@@ -241,6 +243,11 @@ def main(argv: list[str] | None = None) -> int:
         from .verify import verify_portfolio
 
         return verify_portfolio()
+
+    if args.cmd == "peers":
+        from .peers import discover
+
+        return discover()
 
     if args.cmd == "probe":
         from .probe import deep_probe, probe

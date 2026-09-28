@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from datetime import date, datetime, timezone
 
-from .prices_base import Consensus, Quote, TickerInfo
+from .prices_base import Consensus, Fundamentals, Quote, TickerInfo
 
 log = logging.getLogger(__name__)
 
@@ -120,8 +120,70 @@ def consensus_from_info(ticker: str, info: dict) -> Consensus | None:
     )
 
 
+def _ratio(v, lo: float, hi: float) -> float | None:
+    """Tall utenfor et fornuftig intervall regnes som feil hos kilden og vises som «–»."""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return f if f == f and lo <= f <= hi else None
+
+
+def fundamentals_from_info(ticker: str, info: dict) -> Fundamentals:
+    """Plukker nøkkeltall ut av Yahoos info-ordbok.
+
+    Direkteavkastning = utbytte per aksje (siste 12 mnd / varslet) / kurs.
+      Vi regner den ut selv fordi Yahoo har endret enheten på «dividendYield»
+      (prosent i nyere versjoner, brøk i eldre). Eksempel: utbytte 16 kr, kurs 215
+      → 16 / 215 = 0,0744 = 7,4 %.
+    Fornuftskontroller: P/B 0–20, P/E 0–200 (negativ P/E er meningsløs), ROE −100 %–100 %,
+      direkteavkastning 0–25 %.
+    """
+    info = info or {}
+    price = _num(info.get("currentPrice")) or _num(info.get("regularMarketPrice")) or _num(info.get("previousClose"))
+    rate = _num(info.get("dividendRate")) or _num(info.get("trailingAnnualDividendRate"))
+    if rate and price:
+        dy = rate / price
+    else:
+        dy = _num(info.get("trailingAnnualDividendYield"))
+        if dy is None:
+            raw = _num(info.get("dividendYield"))
+            dy = raw / 100 if raw and raw > 1 else raw  # >1 må være prosent
+    return Fundamentals(
+        ticker=ticker,
+        name=info.get("longName") or info.get("shortName"),
+        quote_type=info.get("quoteType"),
+        exchange=info.get("fullExchangeName") or info.get("exchange"),
+        currency=info.get("currency"),
+        price=price,
+        pb=_ratio(info.get("priceToBook"), 0, 20),
+        pe=_ratio(info.get("trailingPE"), 0, 200),
+        div_yield=_ratio(dy, 0, 0.25),
+        roe=_ratio(info.get("returnOnEquity"), -1, 1),
+        market_cap=_num(info.get("marketCap")),
+    )
+
+
 class YahooPriceSource:
     name = "yahoo"
+
+    def fundamentals(self, tickers: list[str]) -> tuple[dict[str, Fundamentals], dict[str, str]]:
+        import yfinance as yf
+
+        out: dict[str, Fundamentals] = {}
+        errors: dict[str, str] = {}
+        for t in tickers:
+            try:
+                info = yf.Ticker(t).info or {}
+                if not (info.get("longName") or info.get("shortName")):
+                    errors[t] = "Yahoo kjenner ikke tickeren"
+                    continue
+                out[t] = fundamentals_from_info(t, info)
+            except Exception as e:  # noqa: BLE001
+                errors[t] = _short(e)
+                log.warning("Yahoo-nøkkeltall feilet for %s: %s", t, errors[t])
+                log.debug("Detaljer for %s", t, exc_info=True)
+        return out, errors
 
     def consensus(self, tickers: list[str]) -> tuple[dict[str, Consensus], dict[str, str]]:
         import yfinance as yf
