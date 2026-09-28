@@ -34,6 +34,19 @@ CREATE TABLE IF NOT EXISTS consensus_daily (
     ticker TEXT NOT NULL, date TEXT NOT NULL, mean REAL, n_analysts INTEGER,
     PRIMARY KEY (ticker, date)
 );
+-- Nyheter og børsmeldinger. id = hash av (omfang, ticker, normalisert tittel), slik at
+-- samme sak fra flere kilder bare lagres én gang (første kilde vinner, børsmelding går foran).
+CREATE TABLE IF NOT EXISTS news (
+    id TEXT PRIMARY KEY, scope TEXT NOT NULL, ticker TEXT, kind TEXT NOT NULL,
+    title TEXT NOT NULL, source TEXT, link TEXT, published TEXT, first_seen TEXT NOT NULL,
+    lang TEXT, topic TEXT
+);
+CREATE INDEX IF NOT EXISTS news_by_time ON news (scope, ticker, published);
+CREATE TABLE IF NOT EXISTS suggestions (
+    id TEXT PRIMARY KEY, ticker TEXT NOT NULL, kursmal REAL NOT NULL, forrige REAL,
+    meglerhus TEXT, anbefaling TEXT, retning TEXT, tittel TEXT, kilde TEXT, lenke TEXT,
+    publisert TEXT, first_seen TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ny', handled_at TEXT
+);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
 
@@ -111,6 +124,75 @@ class Store:
     def get_source_status(self, name: str) -> sqlite3.Row | None:
         with self.conn() as c:
             return c.execute("SELECT * FROM source_status WHERE name=?", (name,)).fetchone()
+
+    # --- nyheter -------------------------------------------------------------
+    def save_news(self, rows: list[dict], now: datetime) -> list[dict]:
+        """Lagrer nyheter. Returnerer radene som var NYE (brukes til varsler i steg 5).
+
+        Børsmeldinger overstyrer en nyhet med samme tittel (merkes da som børsmelding).
+        """
+        new = []
+        with self.conn() as c:
+            for r in rows:
+                cur = c.execute(
+                    "INSERT OR IGNORE INTO news VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    (r["id"], r["scope"], r.get("ticker"), r["kind"], r["title"], r.get("source"), r.get("link"),
+                     _iso(r.get("published")), _iso(now), r.get("lang"), r.get("topic")),
+                )
+                if cur.rowcount:
+                    new.append(r)
+                elif r["kind"] == "borsmelding":
+                    c.execute("UPDATE news SET kind='borsmelding', source=?, link=? WHERE id=?",
+                              (r.get("source"), r.get("link"), r["id"]))
+        return new
+
+    def list_news(self, scope: str, ticker: str | None = None, limit: int = 40,
+                  tickers: list[str] | None = None) -> list[sqlite3.Row]:
+        sql = "SELECT * FROM news WHERE scope=?"
+        args: list = [scope]
+        if ticker:
+            sql += " AND ticker=?"
+            args.append(ticker)
+        if tickers:
+            sql += f" AND ticker IN ({','.join('?' * len(tickers))})"
+            args += tickers
+        sql += " ORDER BY COALESCE(published, first_seen) DESC LIMIT ?"
+        args.append(limit)
+        with self.conn() as c:
+            return c.execute(sql, args).fetchall()
+
+    def prune_news(self, before: datetime) -> None:
+        with self.conn() as c:
+            c.execute("DELETE FROM news WHERE COALESCE(published, first_seen) < ?", (_iso(before),))
+
+    # --- kursmålforslag -------------------------------------------------------
+    def save_suggestions(self, sugg: list, now: datetime) -> list:
+        """Lagrer nye forslag (samme id lagres aldri to ganger). Returnerer de nye."""
+        new = []
+        with self.conn() as c:
+            for s in sugg:
+                cur = c.execute(
+                    "INSERT OR IGNORE INTO suggestions (id,ticker,kursmal,forrige,meglerhus,anbefaling,retning,"
+                    "tittel,kilde,lenke,publisert,first_seen) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (s.id, s.ticker, s.kursmal, s.forrige, s.meglerhus, s.anbefaling, s.retning, s.tittel,
+                     s.kilde, s.lenke, s.publisert, _iso(now)),
+                )
+                if cur.rowcount:
+                    new.append(s)
+        return new
+
+    def list_suggestions(self, status: str = "ny") -> list[sqlite3.Row]:
+        with self.conn() as c:
+            return c.execute("SELECT * FROM suggestions WHERE status=? ORDER BY COALESCE(publisert, first_seen) DESC",
+                             (status,)).fetchall()
+
+    def get_suggestion(self, sid: str) -> sqlite3.Row | None:
+        with self.conn() as c:
+            return c.execute("SELECT * FROM suggestions WHERE id=?", (sid,)).fetchone()
+
+    def set_suggestion_status(self, sid: str, status: str, now: datetime) -> None:
+        with self.conn() as c:
+            c.execute("UPDATE suggestions SET status=?, handled_at=? WHERE id=?", (status, _iso(now), sid))
 
     # --- kildestatus --------------------------------------------------------
     def set_source_status(self, name: str, ok: bool, now: datetime, error: str | None = None) -> None:

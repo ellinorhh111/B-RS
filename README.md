@@ -4,8 +4,8 @@ En gratis skrivebordswidget som viser kurser, kursmål, nyheter og peers for
 selskapene du følger på Oslo Børs og Nasdaq Stockholm. Alt kjører lokalt på
 Macen din. Ingen betalte API-er.
 
-> **Status:** Steg 2 av 5. Kurser, Yahoo-konsensus, dine meglerkursmål og oppside vises i widgeten.
-> Nyheter, peers, markedspanel, varsler og automatisk kjøring kommer i neste steg.
+> **Status:** Steg 3 av 5. Kurser, konsensus, meglerkursmål, oppside, nyheter, børsmeldinger, sektorfeed og
+> kursmålforslag vises i widgeten. Peers, markedspanel, varsler og automatisk kjøring kommer i neste steg.
 
 ## Slik henger det sammen
 
@@ -56,6 +56,7 @@ cd ~/portefolje-widget && git pull && bash install.sh
 |---|---|
 | `.venv/bin/python -m fetcher verify` | Sjekker at hver ticker gir data for riktig selskap (valuta, børs og navn). Rapporten lagres i `data/verify_report.txt` |
 | `.venv/bin/python -m fetcher -v run --force` | Henter data nå, uansett klokkeslett |
+| `.venv/bin/python -m fetcher probe` | Sjekker at hver nyhetskilde finnes og at robots.txt tillater henting. Rapporten lagres i `data/probe_report.txt` |
 | `.venv/bin/python -m fetcher export` | Skriver `data.json` på nytt fra cachen, uten nett. Kjør denne etter at du har redigert en CSV-fil |
 
 ## Redigere portfolio.csv
@@ -103,6 +104,46 @@ Kursmålene dine ligger i `config/broker_targets.csv`. Du kan legge dem inn på 
 | notat | fritekst | Valgfri. Vises når du holder musen over raden |
 
 Rader med feil hoppes over og vises som et gult varsel i widgeten, med radnummer.
+
+## Nyheter og børsmeldinger
+
+| Hva | Kilde | Hvor ofte |
+|---|---|---|
+| Børsmeldinger (merket **BØRSMELDING**) | MFN.se, RSS per selskap. Dekker Oslo (speiler Newsweb) og Stockholm | Hver henting (hvert 5. min i åpningstiden) |
+| Selskapsnyheter | Google News RSS på norsk og svensk. Dekker E24, DN, Finansavisen, DI m.fl. | Hvert 15. min |
+| Direkte avisfeeder | E24, DN, Finansavisen, DI. Brukes bare hvis feeden finnes og robots.txt tillater det | Hvert 15. min |
+| Sektorfeed bank/forsikring | Google News-søk fra `config/sektorsok.csv` | Hvert 60. min |
+
+**Lovlighet:** Bare RSS brukes, og ingen nettsider skrapes. Robots.txt sjekkes for hver vert før henting, og det
+som ikke er tillatt, hentes ikke. Artikler bak betalingsmur leses ikke; vi viser bare overskrift, kilde og lenke.
+Kjør `probe` for å se status for hver kilde.
+
+**Duplikater:** Samme overskrift samme dag vises én gang, uansett hvor mange aviser som har den. En børsmelding
+går foran en nyhetssak med samme tittel.
+
+**Søkeord per selskap** står i `config/nyhetskilder.csv`:
+
+| Kolonne | Eksempel | Betydning |
+|---|---|---|
+| ticker | `PROT.OL` | Som i portfolio.csv |
+| mfn | `protector-forsikring` | Navnet i adressen mfn.se/all/a/**protector-forsikring** |
+| søkeord | `Protector Forsikring\|Protector ASA` | Søk i Google News. Skill flere med \| |
+| trefford | `Protector` | Minst ett av disse må stå i overskriften |
+| utelat | `hjelm\|sykkel` | Overskrifter med disse ordene forkastes (støy) |
+
+**Sektorsøk** står i `config/sektorsok.csv` med kolonnene språk (`no`/`sv`), tema og søk.
+
+### Kursmålforslag fra overskrifter
+
+Overskrifter som «Pareto hever kursmålet på Protector til 480 kroner» eller «SEB höjer riktkursen för Noba till
+105 kronor» blir til *forslag*. De skrives **aldri** automatisk til `broker_targets.csv`. I widgeten
+(«Kursmålforslag», eller under selskapet) kan du velge:
+* **Bekreft:** lagres med meglerhus, kursmål, anbefaling og dato fra overskriften
+* **Rediger / Fyll ut:** åpner skjemaet ferdig utfylt, slik at du kan rette før du lagrer (brukes når meglerhuset mangler)
+* **Forkast:** forslaget skjules for godt
+
+Tall godtas bare mellom 0,25× og 4× dagens kurs. Da blir ikke årstall, prosenter og tastefeil tolket som kursmål.
+Forslag du allerede har lagt inn selv, med samme ticker og kursmål, skjules automatisk.
 
 ## Beregninger
 

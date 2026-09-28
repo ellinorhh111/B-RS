@@ -4,6 +4,8 @@
   python -m fetcher verify          sjekk at tickerne i portfolio.csv gir riktige data
   python -m fetcher export          skriv data.json på nytt fra cache (uten nett)
   python -m fetcher add-target B64  legg til kursmål (brukes av skjemaet i widgeten)
+  python -m fetcher forslag bekreft|forkast ID   håndter kursmålforslag fra nyheter
+  python -m fetcher probe           sjekk at nyhetskildene finnes og tillater henting (robots.txt)
 """
 from __future__ import annotations
 
@@ -14,7 +16,7 @@ import logging
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 
-from . import export, logsetup, paths, schedule, targets
+from . import export, logsetup, news, paths, schedule, targets
 from .csvio import Holding, read_portfolio
 from .sources import PriceSource, get_price_source
 from .store import Store, parse_iso, utcnow
@@ -117,11 +119,21 @@ def run(force: bool = False, source: PriceSource | None = None, now: datetime | 
         fetch_quotes(store, source, tickers, now, errors)
         if consensus_due(store, now, force):
             fetch_consensus(store, source, tickers, now, errors)
+        try:
+            news.run_all(store, paths.config_dir(), now, errors, lambda t: _price(store, t), force)
+        except Exception as e:  # noqa: BLE001 – nyhetsfeil skal aldri stoppe kursene
+            log.exception("Nyhetshenting feilet")
+            errors.append(f"nyheter: {e}")
 
     store.set_last_run(now)
     write_json(store, holdings, now, errors, broker_targets)
     log.info("data.json skrevet (%d feil)", len(errors))
     return 0
+
+
+def _price(store: Store, ticker: str) -> float | None:
+    q = store.get_quote(ticker)
+    return q["price"] if q else None
 
 
 def export_only(now: datetime | None = None) -> int:
@@ -154,6 +166,41 @@ def add_target(b64: str, now: datetime | None = None) -> dict:
     return {"ok": True, "melding": f"Lagret: {row['meglerhus']} {row['ticker']} {row['kursmål']:g}"}
 
 
+def handle_suggestion(action: str, sid: str, now: datetime | None = None) -> dict:
+    """Bekreft (skriv til broker_targets.csv) eller forkast et kursmålforslag."""
+    now = now or utcnow()
+    store = Store(paths.db_path())
+    s = store.get_suggestion(sid)
+    if s is None:
+        return {"ok": False, "feil": "Fant ikke forslaget"}
+    if action == "forkast":
+        store.set_suggestion_status(sid, "forkastet", now)
+        export_only(now)
+        return {"ok": True, "melding": "Forslaget er forkastet"}
+    if not s["meglerhus"]:
+        return {"ok": False, "feil": "Meglerhus mangler i overskriften – bruk skjemaet"}
+    import base64
+
+    published = (s["publisert"] or "")[:10] or None
+    payload = {"ticker": s["ticker"], "meglerhus": s["meglerhus"], "kursmal": str(s["kursmal"]),
+               "anbefaling": s["anbefaling"] or "", "dato": published,
+               "forrige_kursmal": str(s["forrige"]) if s["forrige"] else "",
+               "notat": f"Fra {s['kilde']}: {s['tittel']}"}
+    holdings = read_portfolio(paths.config_dir() / "portfolio.csv")
+    try:
+        targets.add_from_b64(base64.b64encode(json.dumps(payload).encode()).decode(),
+                             paths.config_dir() / "broker_targets.csv", {h.ticker for h in holdings},
+                             lambda t: _price(store, t), now.astimezone(schedule.OSLO).date())
+    except targets.TargetError as e:
+        if "allerede registrert" in str(e):
+            store.set_suggestion_status(sid, "bekreftet", now)
+            export_only(now)
+        return {"ok": False, "feil": str(e)}
+    store.set_suggestion_status(sid, "bekreftet", now)
+    export_only(now)
+    return {"ok": True, "melding": f"Lagret: {s['meglerhus']} {s['ticker']} {s['kursmal']:g}"}
+
+
 @contextmanager
 def run_lock():
     """Hindrer at en manuell kjøring, launchd og skjemaet skriver samtidig."""
@@ -181,6 +228,10 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("export", help="skriv data.json fra cache")
     a = sub.add_parser("add-target", help="legg til kursmål (base64-kodet JSON)")
     a.add_argument("payload")
+    f = sub.add_parser("forslag", help="bekreft eller forkast et kursmålforslag")
+    f.add_argument("action", choices=["bekreft", "forkast"])
+    f.add_argument("id")
+    sub.add_parser("probe", help="sjekk nyhetskildene (robots.txt og RSS)")
     args = p.parse_args(argv)
 
     logsetup.setup(verbose=args.verbose or args.cmd == "verify")
@@ -190,7 +241,12 @@ def main(argv: list[str] | None = None) -> int:
 
         return verify_portfolio()
 
-    if args.cmd == "add-target":
+    if args.cmd == "probe":
+        from .probe import probe
+
+        return probe()
+
+    if args.cmd in ("add-target", "forslag"):
         # Skjemaet venter på svaret, så vi venter på låsen (maks noen sekunder) i stedet for å gi opp.
         import time
 
@@ -198,9 +254,10 @@ def main(argv: list[str] | None = None) -> int:
             with run_lock() as got:
                 if got:
                     try:
-                        result = add_target(args.payload)
+                        result = (add_target(args.payload) if args.cmd == "add-target"
+                                  else handle_suggestion(args.action, args.id))
                     except Exception as e:  # noqa: BLE001
-                        log.exception("add-target feilet")
+                        log.exception("%s feilet", args.cmd)
                         result = {"ok": False, "feil": f"Uventet feil: {e}"}
                     print(json.dumps(result, ensure_ascii=False))
                     return 0

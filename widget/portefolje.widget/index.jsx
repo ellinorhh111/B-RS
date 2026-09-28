@@ -25,6 +25,9 @@ export const initialState = {
   selected: null, // ticker som er åpnet i utvidet visning
   showHistory: false,
   form: null, // { busy, ok, msg }
+  panel: null, // null | "nyheter" | "sektor" | "forslag"
+  prefill: null, // kursmålforslag som fylles inn i skjemaet
+  action: null, // { id, busy, ok, msg } for bekreft/forkast
 };
 
 export const updateState = (event, prev) => {
@@ -43,11 +46,20 @@ export const updateState = (event, prev) => {
       try { localStorage.setItem(POS_KEY, JSON.stringify(prev.pos)); } catch (e) {}
       return prev;
     case "SELECT":
-      return { ...prev, selected: prev.selected === event.ticker ? null : event.ticker, form: null, showHistory: false };
+      return { ...prev, selected: prev.selected === event.ticker ? null : event.ticker, form: null, showHistory: false,
+               prefill: null, panel: null };
     case "TOGGLE_HISTORY":
       return { ...prev, showHistory: !prev.showHistory };
     case "FORM":
       return { ...prev, form: event.status };
+    case "PANEL":
+      return { ...prev, panel: prev.panel === event.panel ? null : event.panel };
+    case "PREFILL":
+      return { ...prev, selected: event.prefill.ticker, prefill: event.prefill, panel: null, form: null };
+    case "CLEAR_PREFILL":
+      return { ...prev, prefill: null };
+    case "ACTION":
+      return { ...prev, action: event.status };
     default:
       return prev;
   }
@@ -119,6 +131,7 @@ const submitTarget = (e, ticker, dispatch) => {
       }
       dispatch({ type: "FORM", status: { ok: r.ok, msg: r.ok ? r.melding : r.feil } });
       if (r.ok) {
+        dispatch({ type: "CLEAR_PREFILL" });
         form.reset();
         f.dato.value = todayOslo();
         refresh(dispatch);
@@ -126,6 +139,37 @@ const submitTarget = (e, ticker, dispatch) => {
     })
     .catch((err) => dispatch({ type: "FORM", status: { ok: false, msg: String(err) } }));
 };
+
+// ---------- lenker og kursmålforslag ----------
+// Lenker åpnes i standardnettleseren med macOS «open». Bare http(s), og ' kodes bort
+// så adressen ikke kan bryte ut av anførselstegnene i shell-kommandoen.
+const openLink = (url) => {
+  if (!/^https?:\/\//i.test(url || "")) return;
+  run(`open '${url.replace(/'/g, "%27")}'`);
+};
+
+const suggestionAction = (action, id, dispatch) => {
+  if (!/^[0-9a-f]{16}$/.test(id)) return;
+  dispatch({ type: "ACTION", status: { id, busy: true, msg: "…" } });
+  run(`cd "${ROOT}" && .venv/bin/python -m fetcher forslag ${action} ${id} 2>/dev/null`)
+    .then((out) => {
+      let r;
+      try { r = JSON.parse(String(out).trim().split("\n").pop()); }
+      catch (e) { r = { ok: false, feil: "Uventet svar: " + String(out).slice(0, 200) }; }
+      dispatch({ type: "ACTION", status: { id, ok: r.ok, msg: r.ok ? r.melding : r.feil } });
+      refresh(dispatch);
+    })
+    .catch((err) => dispatch({ type: "ACTION", status: { id, ok: false, msg: String(err) } }));
+};
+
+// Tidspunkt for nyheter: «14:27» i dag, ellers «27.09 14:27».
+const fmtNewsTime = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const same = d.toLocaleDateString("sv-SE", { timeZone: "Europe/Oslo" }) === todayOslo();
+  return same ? fmtTime(iso) : fmtDateTime(iso).replace(",", "");
+};
+const shortTicker = (t) => (t || "").split(".")[0];
 
 // ---------- stil ----------
 export const className = `
@@ -198,6 +242,30 @@ const box = css`
   .fmsg { font-size: 12px; margin-top: 6px; }
   .fmsg.ok { color: #8fd6a2; }
   .fmsg.err { color: #f0a0a0; }
+  .news { list-style: none; margin: 0; padding: 0; }
+  .news li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-top: 1px solid rgba(255,255,255,0.04);
+             cursor: pointer; }
+  .news li:hover .nt { color: #ffffff; text-decoration: underline; }
+  .news .tm { color: #8e8e93; font-size: 11px; min-width: 64px; font-variant-numeric: tabular-nums; }
+  .news .tk { color: #8e8e93; font-size: 11px; min-width: 42px; }
+  .news .nt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .news .src { color: #8e8e93; font-size: 11px; white-space: nowrap; }
+  .scroll { max-height: 280px; overflow-y: auto; }
+  .tag { display: inline-block; font-size: 10px; font-weight: 600; letter-spacing: 0.4px; padding: 0 5px;
+         border-radius: 4px; margin-right: 5px; vertical-align: 1px; }
+  .tag.bm { color: #16161a; background: #e6cb74; }
+  .tag.tema { color: #b9c3d6; background: rgba(138,180,248,0.12); font-weight: 500; }
+  .block { padding: 6px 12px 8px; border-top: 1px solid rgba(255,255,255,0.06); }
+  .block .sect { margin-top: 2px; }
+  .nav { display: flex; gap: 14px; padding: 7px 12px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 12px; }
+  .nav span { cursor: pointer; color: #8ab4f8; }
+  .nav span.on { color: #e4e4e6; font-weight: 500; }
+  .notice { padding: 5px 12px; font-size: 12px; color: #8ab4f8; cursor: pointer; background: rgba(138,180,248,0.06); }
+  .sugg { padding: 6px 0; border-top: 1px solid rgba(255,255,255,0.04); }
+  .sugg .t { font-size: 12px; cursor: pointer; }
+  .sugg .t:hover { text-decoration: underline; }
+  .sugg .row2 { display: flex; gap: 8px; align-items: center; margin-top: 4px; font-size: 12px; }
+  .sugg button.ghost { background: transparent; color: #8e8e93; border: 1px solid rgba(255,255,255,0.15); }
 `;
 
 // ---------- byggeklosser ----------
@@ -209,7 +277,7 @@ const Upside = ({ u, title }) =>
   );
 
 const SourceWarnings = ({ kilder }) => {
-  const bad = (kilder || []).filter((k) => !k.ok);
+  const bad = (kilder || []).filter((k) => !k.ok && !k.valgfri);
   if (!bad.length) return null;
   return (
     <div className="warn">
@@ -302,7 +370,8 @@ const TargetRows = ({ rows, cur }) => (
   </table>
 );
 
-const TargetForm = ({ c, data, form, dispatch }) => {
+const TargetForm = ({ c, data, form, dispatch, prefill }) => {
+  const p = prefill || {};
   const prevByBroker = get(data, "forrige_per_megler", c.ticker) || {};
   const onBroker = (e) => {
     const prev = prevByBroker[e.target.value];
@@ -311,19 +380,22 @@ const TargetForm = ({ c, data, form, dispatch }) => {
   };
   return (
     <div>
-      <form onSubmit={(e) => submitTarget(e, c.ticker, dispatch)}>
-        <input name="dato" type="date" defaultValue={todayOslo()} required title="Dato for kursmålet" />
-        <input name="meglerhus" list="meglerhus-liste" placeholder="Meglerhus" required onInput={onBroker} />
-        <input name="kursmal" placeholder={`Kursmål (${c.valuta || ""})`} inputMode="decimal" required />
-        <select name="anbefaling" defaultValue="">
+      {prefill ? <div className="muted small" style={{ marginBottom: 4 }}>Fylt inn fra nyhet – sjekk og trykk Lagre.</div> : null}
+      <form key={p.id || "tom"} onSubmit={(e) => submitTarget(e, c.ticker, dispatch)}>
+        <input name="dato" type="date" defaultValue={p.dato || todayOslo()} required title="Dato for kursmålet" />
+        <input name="meglerhus" list="meglerhus-liste" placeholder="Meglerhus" required onInput={onBroker}
+               defaultValue={p.meglerhus || ""} />
+        <input name="kursmal" placeholder={`Kursmål (${c.valuta || ""})`} inputMode="decimal" required
+               defaultValue={p.kursmal || ""} />
+        <select name="anbefaling" defaultValue={p.anbefaling || ""}>
           <option value="">Anbefaling</option>
           <option value="kjøp">Kjøp</option>
           <option value="hold">Hold</option>
           <option value="selg">Selg</option>
         </select>
-        <input name="forrige" placeholder="forrige (valgfri)" inputMode="decimal"
+        <input name="forrige" placeholder="forrige (valgfri)" inputMode="decimal" defaultValue={p.forrige || ""}
                title="Tomt = hentes fra meglerhusets forrige kursmål i filen" />
-        <input name="notat" placeholder="Notat (valgfritt)" style={{ gridColumn: "span 2" }} />
+        <input name="notat" placeholder="Notat (valgfritt)" style={{ gridColumn: "span 2" }} defaultValue={p.notat || ""} />
         <button type="submit" disabled={form && form.busy}>Lagre</button>
         <datalist id="meglerhus-liste">
           {(data.meglerhus || []).map((m) => <option key={m} value={m} />)}
@@ -333,6 +405,67 @@ const TargetForm = ({ c, data, form, dispatch }) => {
     </div>
   );
 };
+
+const NewsList = ({ items, showTicker }) =>
+  items && items.length ? (
+    <ul className="news">
+      {items.map((n) => (
+        <li key={n.id} onClick={() => openLink(n.lenke)} title={`${n.tittel}\n${n.kilde || ""}`}>
+          <span className="tm">{fmtNewsTime(n.tid)}</span>
+          {showTicker ? <span className="tk">{shortTicker(n.ticker)}</span> : null}
+          <span className="nt">
+            {n.type === "børsmelding" ? <span className="tag bm">BØRSMELDING</span> : null}
+            {n.tema ? <span className="tag tema">{n.tema}</span> : null}
+            {n.tittel}
+          </span>
+          <span className="src">{n.kilde}</span>
+        </li>
+      ))}
+    </ul>
+  ) : (
+    <div className="empty">Ingen saker ennå.</div>
+  );
+
+const Suggestions = ({ items, data, state, dispatch }) =>
+  items && items.length ? (
+    <div>
+      {items.map((f) => {
+        const c = (data.selskaper || []).find((x) => x.ticker === f.ticker) || {};
+        const a = state.action && state.action.id === f.id ? state.action : null;
+        const prefill = {
+          id: f.id, ticker: f.ticker, dato: (f.publisert || todayOslo()).slice(0, 10), meglerhus: f.meglerhus || "",
+          kursmal: String(f.kursmal).replace(".", ","), anbefaling: f.anbefaling || "",
+          forrige: f.forrige ? String(f.forrige).replace(".", ",") : "", notat: `Fra ${f.kilde}: ${f.tittel}`.slice(0, 280),
+        };
+        return (
+          <div className="sugg" key={f.id}>
+            <div className="t" onClick={() => openLink(f.lenke)} title="Åpne kilden">
+              {f.tittel} <span className="muted small">– {f.kilde} {fmtNewsTime(f.publisert)}</span>
+            </div>
+            <div className="row2">
+              <span>
+                <b>{c.navn || f.ticker}</b>: {f.meglerhus || <span className="old">meglerhus ukjent</span>}{" "}
+                {f.retning || ""} til <b>{fmtNum(f.kursmal)}</b> {c.valuta || ""}
+                {isNum(f.forrige) ? ` (fra ${fmtNum(f.forrige)})` : ""}
+                {f.anbefaling ? ` · ${f.anbefaling}` : ""}
+              </span>
+              <span style={{ flex: 1 }} />
+              {f.meglerhus ? (
+                <button disabled={a && a.busy} onClick={() => suggestionAction("bekreft", f.id, dispatch)}>Bekreft</button>
+              ) : null}
+              <button className="ghost" onClick={() => dispatch({ type: "PREFILL", prefill })}
+                      title="Åpne i skjemaet for å rette før lagring">{f.meglerhus ? "Rediger" : "Fyll ut"}</button>
+              <button className="ghost" disabled={a && a.busy}
+                      onClick={() => suggestionAction("forkast", f.id, dispatch)}>Forkast</button>
+            </div>
+            {a && a.msg && !a.busy ? <div className={"fmsg " + (a.ok ? "ok" : "err")}>{a.msg}</div> : null}
+          </div>
+        );
+      })}
+    </div>
+  ) : (
+    <div className="empty">Ingen nye kursmålforslag.</div>
+  );
 
 const Detail = ({ c, data, state, dispatch }) => {
   const k = c.konsensus;
@@ -373,8 +506,20 @@ const Detail = ({ c, data, state, dispatch }) => {
         </div>
       ) : null}
 
+      {(data.forslag || []).some((f) => f.ticker === c.ticker) ? (
+        <div>
+          <div className="sect">Kursmålforslag fra nyheter</div>
+          <Suggestions items={(data.forslag || []).filter((f) => f.ticker === c.ticker)} data={data}
+                       state={state} dispatch={dispatch} />
+        </div>
+      ) : null}
+
       <div className="sect">+ Legg til kursmål</div>
-      <TargetForm c={c} data={data} form={state.form} dispatch={dispatch} />
+      <TargetForm c={c} data={data} form={state.form} dispatch={dispatch}
+                  prefill={state.prefill && state.prefill.ticker === c.ticker ? state.prefill : null} />
+
+      <div className="sect">Nyheter og børsmeldinger</div>
+      <div className="scroll"><NewsList items={c.nyheter} /></div>
     </div>
   );
 };
@@ -414,7 +559,46 @@ export const render = (state, dispatch) => {
       )}
       <SourceWarnings kilder={data.kilder} />
       <Companies selskaper={selskaper} selected={selected} dispatch={dispatch} />
+      {(data.forslag || []).length ? (
+        <div className="notice" onClick={() => dispatch({ type: "PANEL", panel: "forslag" })}>
+          ● {data.forslag.length} {data.forslag.length === 1 ? "nytt kursmålforslag" : "nye kursmålforslag"} fra nyheter – klikk for å se
+        </div>
+      ) : null}
       {sel ? <Detail c={sel} data={data} state={state} dispatch={dispatch} /> : null}
+      {!sel && !state.panel ? (
+        <div className="block">
+          <div className="sect">Siste nytt – mine selskaper</div>
+          <NewsList items={data.siste_nyheter} showTicker />
+        </div>
+      ) : null}
+      {state.panel ? (
+        <div className="block">
+          <div className="dhead">
+            <span className="sect">
+              {state.panel === "nyheter" ? "Alle nyheter og børsmeldinger" : state.panel === "sektor"
+                ? "Sektor: bank og forsikring (Norge og Sverige)" : "Kursmålforslag fra nyhetsoverskrifter"}
+            </span>
+            <span className="x" onClick={() => dispatch({ type: "PANEL", panel: state.panel })} title="Lukk">✕</span>
+          </div>
+          <div className="scroll" style={{ maxHeight: 420 }}>
+            {state.panel === "nyheter" ? (
+              <NewsList showTicker items={[].concat(...selskaper.map((c) => c.nyheter || []))
+                .sort((a, b) => (a.tid < b.tid ? 1 : -1)).slice(0, 80)} />
+            ) : state.panel === "sektor" ? (
+              <NewsList items={data.sektor} />
+            ) : (
+              <Suggestions items={data.forslag} data={data} state={state} dispatch={dispatch} />
+            )}
+          </div>
+        </div>
+      ) : null}
+      <div className="nav">
+        <span className={state.panel === "nyheter" ? "on" : ""} onClick={() => dispatch({ type: "PANEL", panel: "nyheter" })}>Alle nyheter</span>
+        <span className={state.panel === "sektor" ? "on" : ""} onClick={() => dispatch({ type: "PANEL", panel: "sektor" })}>Sektor</span>
+        <span className={state.panel === "forslag" ? "on" : ""} onClick={() => dispatch({ type: "PANEL", panel: "forslag" })}>
+          Kursmålforslag{(data.forslag || []).length ? ` (${data.forslag.length})` : ""}
+        </span>
+      </div>
       <div className="foot">
         Oppside = (kursmål − kurs) / kurs · grønn &gt; 15 %, gul −5 til 15 %, rød &lt; −5 % · klikk et selskap for detaljer
         <br />

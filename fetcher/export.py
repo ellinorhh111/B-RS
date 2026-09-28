@@ -14,7 +14,7 @@ from . import calc, schedule, targets
 from .csvio import Holding
 from .store import Store, parse_iso
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Visningsnavn for kildene i widgeten.
 SOURCE_LABELS = {
@@ -22,7 +22,33 @@ SOURCE_LABELS = {
     "yahoo_konsensus": "Yahoo Finance (konsensus)",
     "portfolio.csv": "portfolio.csv",
     "broker_targets.csv": "broker_targets.csv",
+    "mfn": "Børsmeldinger (MFN)",
+    "google_news": "Google News (selskaper)",
+    "google_sektor": "Google News (sektor)",
 }
+# Valgfrie kilder: feiler de, vises det ikke som varsel (de dekkes av Google News).
+OPTIONAL_PREFIX = "rss_"
+
+
+def _news(r) -> dict:
+    return {
+        "id": r["id"], "ticker": r["ticker"], "tittel": r["title"], "kilde": r["source"], "lenke": r["link"],
+        "tid": r["published"] or r["first_seen"], "type": "børsmelding" if r["kind"] == "borsmelding" else "nyhet",
+        "tema": r["topic"],
+    }
+
+
+def _suggestions(store: Store, broker_targets: list[targets.BrokerTarget]) -> list[dict]:
+    """Nye kursmålforslag, unntatt de du allerede har lagt inn selv (samme ticker og kursmål)."""
+    have = {(t.ticker, round(t.kursmal, 2)) for t in broker_targets}
+    out = []
+    for r in store.list_suggestions("ny"):
+        if (r["ticker"], round(r["kursmal"], 2)) in have:
+            continue
+        out.append({k: r[k] for k in ("id", "ticker", "kursmal", "forrige", "meglerhus", "anbefaling", "retning",
+                                       "tittel", "kilde", "lenke", "publisert")})
+    return out
+
 
 # Yahoos anbefalingsnøkler på norsk.
 RECOMMENDATION_NO = {
@@ -74,6 +100,7 @@ def build(store: Store, holdings: list[Holding], now: datetime, run_errors: list
             "kilde": row["source"] if row else None,
             "kommentar": h.kommentar or None,
             "konsensus": _consensus(store.get_consensus(h.ticker), price),
+            "nyheter": [_news(r) for r in store.list_news("selskap", h.ticker, limit=40)],
             "megler": targets.summarize(broker_targets, h.ticker, price, today),
             "mitt": {
                 "kursmal": h.mitt_kursmal,
@@ -89,6 +116,7 @@ def build(store: Store, holdings: list[Holding], now: datetime, run_errors: list
             "navn": s["name"],
             "label": SOURCE_LABELS.get(s["name"], s["name"]),
             "ok": bool(s["ok"]),
+            "valgfri": s["name"].startswith(OPTIONAL_PREFIX),
             "sist_forsok": s["last_attempt"],
             "sist_ok": s["last_ok"],
             "feil": s["error"],
@@ -104,6 +132,10 @@ def build(store: Store, holdings: list[Holding], now: datetime, run_errors: list
         "selskaper": companies,
         "kilder": sources,
         "feil": run_errors,
+        "siste_nyheter": [_news(r) for r in store.list_news("selskap", limit=5, tickers=[h.ticker for h in holdings])]
+        if holdings else [],
+        "sektor": [_news(r) for r in store.list_news("sektor", limit=40)],
+        "forslag": _suggestions(store, broker_targets),
         "meglerhus": targets.known_brokers(broker_targets),
         "forrige_per_megler": targets.last_target_by_broker(broker_targets),
         "grenser": {"gronn_over_pct": calc.GREEN_ABOVE * 100, "rod_under_pct": calc.RED_BELOW * 100,
