@@ -160,7 +160,11 @@ def fundamentals_from_info(ticker: str, info: dict) -> Fundamentals:
         pe=_ratio(info.get("trailingPE"), 0, 200),
         div_yield=_ratio(dy, 0, 0.25),
         roe=_ratio(info.get("returnOnEquity"), -1, 1),
-        market_cap=_num(info.get("marketCap")),
+        # Markedsverdi: Yahoo mangler ofte «marketCap» for nordiske aksjer og egenkapitalbevis.
+        # Reserve: markedsverdi = kurs × antall aksjer/bevis.
+        market_cap=_num(info.get("marketCap")) or (
+            price * shares if price and (shares := _num(info.get("sharesOutstanding"))
+                                         or _num(info.get("impliedSharesOutstanding"))) else None),
     )
 
 

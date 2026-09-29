@@ -105,3 +105,13 @@ def test_approve_writes_peers_csv_with_ekb(root, monkeypatch):
     text = (root / "config" / "peers.csv").read_text(encoding="utf-8-sig")
     assert "MING.OL;SpareBank 1 SMN;Oslo Børs;bank;ja;" in text
     assert "BIEN.OL;Bien Sparebank ASA;Oslo Børs;bank;nei;" in text
+
+
+def test_market_cap_fallback_and_cap_weighted():
+    from fetcher import sector
+    f = fundamentals_from_info("X.OL", {"longName": "X", "currentPrice": 100.0, "sharesOutstanding": 2e8})
+    assert f.market_cap == 2e10  # 100 × 200 mill.
+    rows = [{"mcap_mrd_nok": 300, "endring_pct": 1.0}, {"mcap_mrd_nok": 3, "endring_pct": 7.0},
+            {"mcap_mrd_nok": None, "endring_pct": 50.0}]
+    # (300·1 + 3·7) / 303 = 321 / 303 = 1,0594 – raden uten markedsverdi teller ikke
+    assert round(sector._cap_weighted(rows), 4) == 1.0594 and sector._n_cap(rows) == 2

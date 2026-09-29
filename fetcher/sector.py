@@ -7,8 +7,10 @@ Konvensjoner (se også calc.py):
     NOK med SEKNOK fra Yahoo. Kursen og tidspunktet vises i widgeten.
   * Peer-median regnes per type (bank / forbruksbank / forsikring) og UTEN mine egne
     selskaper, slik at jeg sammenligner meg med de andre, ikke med meg selv.
-  * «Sektor i dag» er et likevektet snitt av dagsendringen (hver aksje teller likt),
-    ikke markedsvektet. Banker = bank + forbruksbank.
+  * «Sektor i dag» viser både markedsvektet og likevektet snitt av dagsendringen.
+    Markedsvektet = Σ (markedsverdi_i × endring_i) / Σ markedsverdi_i  (som en indeks;
+    store banker teller mest). Likevektet = vanlig snitt (hver aksje teller likt, så
+    små, lite omsatte sparebanker kan dominere). Banker = bank + forbruksbank.
 """
 from __future__ import annotations
 
@@ -104,13 +106,17 @@ def build(store: Store, peers: list[Peer], holdings, overrides: dict[str, Overri
 
     # Sektor i dag: likevektet snitt av dagsendring, og 3 beste / 3 svakeste.
     with_change = [r for r in rows if r["endring_pct"] is not None]
-    banks = [r["endring_pct"] for r in with_change if r["type"] in ("bank", "forbruksbank")]
-    ins = [r["endring_pct"] for r in with_change if r["type"] == "forsikring"]
+    bank_rows = [r for r in with_change if r["type"] in ("bank", "forbruksbank")]
+    ins_rows = [r for r in with_change if r["type"] == "forsikring"]
+    banks = [r["endring_pct"] for r in bank_rows]
+    ins = [r["endring_pct"] for r in ins_rows]
     ranked = sorted(with_change, key=lambda r: r["endring_pct"], reverse=True)
     brief = lambda r: {"ticker": r["ticker"], "navn": r["navn"], "endring_pct": r["endring_pct"], "mine": r["mine"]}  # noqa: E731
     today = {
-        "bank": {"snitt_pct": _r(calc.average_of(banks)), "n": len(banks)},
-        "forsikring": {"snitt_pct": _r(calc.average_of(ins)), "n": len(ins)},
+        "bank": {"snitt_pct": _r(calc.average_of(banks)), "n": len(banks),
+                 "vektet_pct": _r(_cap_weighted(bank_rows)), "n_vektet": _n_cap(bank_rows)},
+        "forsikring": {"snitt_pct": _r(calc.average_of(ins)), "n": len(ins),
+                       "vektet_pct": _r(_cap_weighted(ins_rows)), "n_vektet": _n_cap(ins_rows)},
         "beste": [brief(r) for r in ranked[:3]],
         "svakeste": [brief(r) for r in ranked[-3:][::-1]] if len(ranked) > 3 else [],
     }
@@ -129,6 +135,18 @@ def build(store: Store, peers: list[Peer], holdings, overrides: dict[str, Overri
             "merknad": r["merknad"],
         }
     return {"peers": rows, "peer_median": medians, "sektor_i_dag": today, "verdsettelse": valuation, "valuta": fx}
+
+
+def _cap_weighted(rows: list[dict]) -> float | None:
+    """Markedsvektet snitt: Σ (markedsverdi × endring) / Σ markedsverdi, over rader med begge tall.
+    Eksempel: DNB 300 mrd +1 % og en sparebank 3 mrd +7 % → (300·1 + 3·7) / 303 = 1,06 %."""
+    w = [(r["mcap_mrd_nok"], r["endring_pct"]) for r in rows if r["mcap_mrd_nok"] and r["endring_pct"] is not None]
+    total = sum(m for m, _ in w)
+    return sum(m * c for m, c in w) / total if total else None
+
+
+def _n_cap(rows: list[dict]) -> int:
+    return sum(1 for r in rows if r["mcap_mrd_nok"] and r["endring_pct"] is not None)
 
 
 def _r(v: float | None) -> float | None:

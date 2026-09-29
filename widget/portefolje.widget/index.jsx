@@ -518,12 +518,23 @@ const SectorToday = ({ s }) => {
   return (
     <div className="sector">
       <div className="sect" style={{ margin: 0 }}>Sektor i dag</div>
-      <div className="row">
-        <span>Banker <b className={changeClass(get(s, "bank", "snitt_pct"))}>{fmtPct(get(s, "bank", "snitt_pct"), 2)}</b>
-          <span className="muted small"> (snitt av {get(s, "bank", "n") || 0})</span></span>
-        <span>Forsikring <b className={changeClass(get(s, "forsikring", "snitt_pct"))}>{fmtPct(get(s, "forsikring", "snitt_pct"), 2)}</b>
-          <span className="muted small"> (snitt av {get(s, "forsikring", "n") || 0})</span></span>
-      </div>
+      {["bank", "forsikring"].map((k) => {
+        const g = s[k] || {};
+        const hasW = isNum(g.vektet_pct);
+        return (
+          <div className="row" key={k}>
+            <span style={{ minWidth: 80 }}>{k === "bank" ? "Banker" : "Forsikring"}</span>
+            {hasW ? (
+              <span title={`Markedsvektet over ${g.n_vektet} selskaper med kjent markedsverdi`}>
+                <b className={changeClass(g.vektet_pct)}>{fmtPct(g.vektet_pct, 2)}</b>
+                <span className="muted small"> markedsvektet</span></span>
+            ) : null}
+            <span title="Likevektet: hver aksje teller likt">
+              <span className={hasW ? "" : "name"}><span className={changeClass(g.snitt_pct)}>{fmtPct(g.snitt_pct, 2)}</span></span>
+              <span className="muted small"> likevektet (n={g.n || 0})</span></span>
+          </div>
+        );
+      })}
       {s.beste && s.beste.length ? <div className="row"><span className="muted" style={{ minWidth: 52 }}>Best:</span>{s.beste.map(item)}</div> : null}
       {s.svakeste && s.svakeste.length ? <div className="row"><span className="muted" style={{ minWidth: 52 }}>Svakest:</span>{s.svakeste.map(item)}</div> : null}
     </div>
