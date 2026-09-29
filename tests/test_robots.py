@@ -37,3 +37,14 @@ def test_empty_disallow_and_no_rules():
 def test_grouped_user_agents():
     txt = "User-agent: foo\nUser-agent: *\nDisallow: /private\n"
     assert not decide(txt, "https://x.com/private/1", UA).allowed
+
+
+def test_http_status_handling_rfc9309(monkeypatch):
+    from fetcher.sources import web
+
+    for status, allowed in ((403, True), (401, True), (404, True), (503, False), (500, False)):
+        web._robots.clear()
+        monkeypatch.setattr(web, "_get", lambda url, s=status: (s, b""))
+        d = web.check("https://data.norges-bank.no/api/data/X")
+        assert d.allowed is allowed, (status, d.rule)
+        assert str(status) in d.rule
