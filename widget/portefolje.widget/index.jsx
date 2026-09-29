@@ -292,6 +292,8 @@ const box = css`
   .sugg .t { font-size: 12px; cursor: pointer; }
   .sugg .t:hover { text-decoration: underline; }
   .sugg .row2 { display: flex; gap: 8px; align-items: center; margin-top: 4px; font-size: 12px; }
+  .market { display: flex; flex-wrap: wrap; gap: 3px 12px; padding: 6px 12px; font-size: 11.5px;
+            border-bottom: 1px solid rgba(255,255,255,0.06); font-variant-numeric: tabular-nums; }
   .sector { padding: 6px 12px 8px; border-top: 1px solid rgba(255,255,255,0.06); font-size: 12px; }
   .sector .row { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 2px; }
   .sector b { font-weight: 500; }
@@ -506,6 +508,32 @@ const Suggestions = ({ items, data, state, dispatch }) =>
   ) : (
     <div className="empty">Ingen nye kursmålforslag.</div>
   );
+
+// ---------- markedspanel ----------
+const Market = ({ m }) => {
+  if (!m) return null;
+  const fx = (n) => (n === "SEK/NOK" ? 4 : 2);
+  return (
+    <div className="market">
+      {(m.poster || []).map((p) => (
+        <span key={p.navn} title={p.tid ? `Kurs fra ${fmtDateTime(p.tid)}` : ""}>
+          <span className="muted">{p.navn}</span> {p.type === "indeks" ? fmtNum(p.kurs, 0) : fmtNum(p.kurs, fx(p.navn))}
+          {p.type === "indeks" ? <span className={changeClass(p.endring_pct)}> {fmtPct(p.endring_pct)}</span> : null}
+        </span>
+      ))}
+      {m.finans ? (
+        <span title={m.finans.forklaring}><span className="muted">Finans*</span>{" "}
+          <span className={changeClass(m.finans.endring_pct)}>{fmtPct(m.finans.endring_pct, 2)}</span></span>
+      ) : null}
+      {(m.renter || []).map((r) => (
+        <span key={r.land} title={`10-årig statsrente ${r.land === "NO" ? "Norge (Norges Bank)" : "Sverige (Riksbanken)"}, ${fmtDate(r.dato)}`}>
+          <span className="muted">{r.land} 10å</span> {fmtNum(r.rente, 2)} %
+          {isNum(r.endring_bp) ? <span className="muted small"> ({r.endring_bp > 0 ? "+" : r.endring_bp < 0 ? "−" : ""}{fmtNum(Math.abs(r.endring_bp), 0)} bp)</span> : null}
+        </span>
+      ))}
+    </div>
+  );
+};
 
 // ---------- sektor og peers ----------
 const SectorToday = ({ s }) => {
@@ -758,6 +786,7 @@ export const render = (state, dispatch) => {
         </div>
       )}
       <SourceWarnings kilder={data.kilder} />
+      <Market m={data.marked} />
       <Companies selskaper={selskaper} selected={selected} dispatch={dispatch} />
       <SectorToday s={data.sektor_i_dag} />
       {(data.forslag || []).length ? (
@@ -808,6 +837,7 @@ export const render = (state, dispatch) => {
         Oppside = (kursmål − kurs) / kurs · grønn &gt; 15 %, gul −5 til 15 %, rød &lt; −5 % · klikk et selskap for detaljer
         <br />
         Kurser fra Yahoo Finance (ca. 15 min forsinket) · {data.apningstid ? "børsen er åpen" : "børsen er stengt"}
+        {data.marked && data.marked.finans ? " · *Finans = egen beregning (markedsvektede banker)" : ""}
       </div>
     </div>
   );

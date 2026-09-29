@@ -108,6 +108,14 @@ else
 fi
 open -a "Übersicht" 2>/dev/null || true
 
+# --- 7. Automatisk kjøring (valgfritt) -------------------------------------
+say "Automatisk kjøring"
+if ask "Slå på automatisk oppdatering (hvert 5. min i åpningstiden, ellers hver time)?"; then
+  bash "$ROOT/launchd/installer.sh"
+else
+  echo "Hopper over. Du kan slå det på senere med AutoOppdatering.command."
+fi
+
 say "Ferdig"
 echo "Widgeten skal nå vises på skrivebordet. Dra i tittellinjen for å flytte den."
 echo "Logg: $ROOT/data/logs/fetcher.log"

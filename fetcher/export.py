@@ -26,6 +26,7 @@ SOURCE_LABELS = {
     "nasdaq": "Nasdaq Stockholm (børsvarsler)",
     "yahoo_peers": "Yahoo Finance (peer-kurser)",
     "yahoo_nokkeltall": "Yahoo Finance (nøkkeltall)",
+    "statsrenter": "Norges Bank / Riksbanken (statsrenter)",
 }
 # Valgfrie kilder: feiler de, vises det ikke som varsel.
 OPTIONAL_PREFIX = "rss_"
@@ -71,6 +72,28 @@ def _consensus(row, price: float | None) -> dict | None:
         "oppside_pct": calc.to_pct(up),
         "farge": calc.color(up),
     }
+
+
+MARKET = [("OSEBX.OL", "OSEBX", "indeks"), ("^OMX", "OMXS30", "indeks"), ("NOK=X", "USD/NOK", "valuta"),
+          ("EURNOK=X", "EUR/NOK", "valuta"), ("SEKNOK=X", "SEK/NOK", "valuta")]
+
+
+def _market(store: Store, sector_today: dict | None) -> dict:
+    """Markedspanelet. «Finans» er en egen beregning: markedsvektet dagsendring for bankene
+    i peers.csv (Oslo Børs' egen finansindeks finnes ikke gratis i Yahoo)."""
+    items = []
+    for ticker, label, kind in MARKET:
+        q = store.get_quote(ticker)
+        chg = (q["price"] - q["prev_close"]) / q["prev_close"] * 100 if q and q["price"] and q["prev_close"] else None
+        items.append({"navn": label, "type": kind, "kurs": q["price"] if q else None,
+                      "endring_pct": _round(chg, 3), "tid": q["market_time"] if q else None})
+    bank = (sector_today or {}).get("bank") or {}
+    finans = bank.get("vektet_pct")
+    renter = json.loads(store.get_meta("yields") or "{}")
+    return {"poster": items,
+            "finans": {"endring_pct": finans, "forklaring": "Egen beregning: markedsvektet snitt for bankene i peers.csv"}
+            if finans is not None else None,
+            "renter": [{"land": k, **v} for k, v in sorted(renter.items())]}
 
 
 def _round(v: float | None, n: int = 4) -> float | None:
@@ -145,6 +168,7 @@ def build(store: Store, holdings: list[Holding], now: datetime, run_errors: list
         "peer_median": sector_data.get("peer_median", {}),
         "sektor_i_dag": sector_data.get("sektor_i_dag"),
         "valuta": sector_data.get("valuta"),
+        "marked": _market(store, sector_data.get("sektor_i_dag")),
         "grenser": {"gronn_over_pct": calc.GREEN_ABOVE * 100, "rod_under_pct": calc.RED_BELOW * 100,
                     "gammel_etter_dager": calc.OLD_TARGET_DAYS},
     }

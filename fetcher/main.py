@@ -28,7 +28,11 @@ CONSENSUS_INTERVAL = timedelta(hours=6)
 # Peers: kurser hvert 15. min (i åpningstiden), nøkkeltall to ganger i døgnet.
 PEER_QUOTES_INTERVAL = timedelta(minutes=15)
 FUNDAMENTALS_INTERVAL = timedelta(hours=12)
-FX_TICKERS = ["SEKNOK=X"]  # valutakurs for markedsverdi i NOK
+# Markedspanelet (Yahoo-tickere). SEKNOK=X brukes også til markedsverdi i NOK.
+MARKET_TICKERS = {"OSEBX.OL": "OSEBX", "^OMX": "OMXS30", "NOK=X": "USD/NOK", "EURNOK=X": "EUR/NOK",
+                  "SEKNOK=X": "SEK/NOK"}
+FX_TICKERS = list(MARKET_TICKERS)
+YIELDS_INTERVAL = timedelta(hours=3)
 
 
 def load_holdings(store: Store, now: datetime, errors: list[str]) -> list[Holding]:
@@ -81,11 +85,11 @@ def _due(store: Store, key: str, interval: timedelta, now: datetime, force: bool
 def fetch_peers(store: Store, source: PriceSource, peer_tickers: list[str], own: list[str], now: datetime,
                 errors: list[str], force: bool) -> None:
     """Kurser for peers (og valutakurs) hvert 15. min; nøkkeltall for peers + egne selskaper hvert 12. time."""
-    if peer_tickers and _due(store, "last_peer_quotes", PEER_QUOTES_INTERVAL, now, force):
+    if _due(store, "last_peer_quotes", PEER_QUOTES_INTERVAL, now, force):
         try:
             quotes, qerrors = source.quotes(peer_tickers + FX_TICKERS)
             store.save_quotes(quotes, source.name, now)
-            store.set_source_status("yahoo_peers", bool(quotes), now,
+            store.set_source_status("yahoo_peers", len(quotes) > len(FX_TICKERS) // 2, now,
                                     f"{len(qerrors)} av {len(peer_tickers) + len(FX_TICKERS)} feilet" if qerrors else None)
             store.set_meta("last_peer_quotes", now.isoformat())
             log.info("Peer-kurser: %d ok, %d feilet", len(quotes), len(qerrors))
@@ -93,6 +97,20 @@ def fetch_peers(store: Store, source: PriceSource, peer_tickers: list[str], own:
             log.exception("Peer-kurser feilet")
             store.set_source_status("yahoo_peers", False, now, f"{type(e).__name__}: {e}")
             errors.append(f"yahoo_peers: {e}")
+    if _due(store, "last_yields", YIELDS_INTERVAL, now, force):
+        from .sources import rates
+
+        found, rerrors = rates.ten_year_yields(now.date())
+        if found:
+            import json as _json
+
+            old = _json.loads(store.get_meta("yields") or "{}")
+            old.update({k: {"rente": y.rente, "forrige": y.forrige, "dato": y.dato, "endring_bp": y.endring_bp}
+                        for k, y in found.items()})
+            store.set_meta("yields", _json.dumps(old))
+        store.set_source_status("statsrenter", bool(found), now,
+                                "; ".join(f"{k}: {v}" for k, v in rerrors.items()) or None)
+        store.set_meta("last_yields", now.isoformat())
     if _due(store, "last_fundamentals", FUNDAMENTALS_INTERVAL, now, force):
         try:
             found, ferrors = source.fundamentals(own + peer_tickers)
@@ -134,7 +152,7 @@ def fetch_consensus(store: Store, source: PriceSource, tickers: list[str], now: 
 
 
 def write_json(store: Store, holdings: list[Holding], now: datetime, errors: list[str],
-               broker_targets: list[targets.BrokerTarget]) -> None:
+               broker_targets: list[targets.BrokerTarget]) -> dict:
     from . import peerconfig, sector
     from .peers import classify
 
@@ -146,7 +164,9 @@ def write_json(store: Store, holdings: list[Holding], now: datetime, errors: lis
         log.exception("Peer-beregning feilet")
         errors.append(f"peers: {e}")
         sector_data = {}
-    export.write(export.build(store, holdings, now, errors, broker_targets, sector_data), paths.json_path())
+    data = export.build(store, holdings, now, errors, broker_targets, sector_data)
+    export.write(data, paths.json_path())
+    return data
 
 
 def run(force: bool = False, source: PriceSource | None = None, now: datetime | None = None) -> int:
@@ -162,6 +182,7 @@ def run(force: bool = False, source: PriceSource | None = None, now: datetime | 
     holdings = load_holdings(store, now, errors)
     broker_targets = load_targets(store, now, errors)
     tickers = [h.ticker for h in holdings]
+    news_run = None
 
     if tickers:
         source = source or get_price_source()
@@ -173,14 +194,24 @@ def run(force: bool = False, source: PriceSource | None = None, now: datetime | 
         peer_list = [p.ticker for p in read_peers(paths.config_dir() / "peers.csv") if p.ticker not in tickers]
         fetch_peers(store, source, peer_list, tickers, now, errors, force)
         try:
-            news.run_all(store, paths.config_dir(), now, errors, lambda t: _price(store, t), force)
+            news_run = news.run_all(store, paths.config_dir(), now, errors, lambda t: _price(store, t), force)
         except Exception as e:  # noqa: BLE001 – nyhetsfeil skal aldri stoppe kursene
             log.exception("Nyhetshenting feilet")
             errors.append(f"nyheter: {e}")
 
     store.set_last_run(now)
-    write_json(store, holdings, now, errors, broker_targets)
+    data = write_json(store, holdings, now, errors, broker_targets)
     log.info("data.json skrevet (%d feil)", len(errors))
+    try:
+        from . import alerts
+
+        found = alerts.collect(data, news_run.new_filings if news_run else [],
+                               news_run.new_suggestions if news_run else [], store, now)
+        sent = alerts.send(found, store, now)
+        if sent:
+            log.info("Varsler sendt: %d", sent)
+    except Exception:  # noqa: BLE001 – varsler skal aldri stoppe hentingen
+        log.exception("Varsler feilet")
     return 0
 
 

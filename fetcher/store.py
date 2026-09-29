@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS fundamentals (
     ticker TEXT PRIMARY KEY, name TEXT, pb REAL, pe REAL, div_yield REAL, roe REAL,
     market_cap REAL, currency TEXT, source TEXT, fetched_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS alerts_sent (key TEXT PRIMARY KEY, sent_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 """
 
@@ -226,6 +227,15 @@ class Store:
     def source_statuses(self) -> list[sqlite3.Row]:
         with self.conn() as c:
             return c.execute("SELECT * FROM source_status ORDER BY name").fetchall()
+
+    # --- varsler --------------------------------------------------------------
+    def alert_sent(self, key: str) -> bool:
+        with self.conn() as c:
+            return c.execute("SELECT 1 FROM alerts_sent WHERE key=?", (key,)).fetchone() is not None
+
+    def mark_alert(self, key: str, now: datetime) -> None:
+        with self.conn() as c:
+            c.execute("INSERT OR IGNORE INTO alerts_sent VALUES (?,?)", (key, _iso(now)))
 
     # --- diverse ------------------------------------------------------------
     def get_meta(self, key: str) -> str | None:

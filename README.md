@@ -4,9 +4,8 @@ En gratis skrivebordswidget som viser kurser, kursmål, nyheter og peers for
 selskapene du følger på Oslo Børs og Nasdaq Stockholm. Alt kjører lokalt på
 Macen din. Ingen betalte API-er.
 
-> **Status:** Steg 4 av 5 (peers og sektorpanel) – peer-listen venter på godkjenning.
-> Tidligere: steg 3 av 5. Kurser, konsensus, meglerkursmål, oppside, nyheter, børsmeldinger, sektorfeed og
-> kursmålforslag vises i widgeten. Peers, markedspanel, varsler og automatisk kjøring kommer i neste steg.
+> **Status:** Alle fem steg er bygget: kurser, kursmål og oppside, nyheter og børsmeldinger, peers og
+> sektorpanel, markedspanel, varsler og automatisk kjøring.
 
 ## Slik henger det sammen
 
@@ -201,7 +200,51 @@ Eierbrøken står i bankens kvartalsrapport. Legg den inn i `config/overrides.cs
 
 Manuelle tall merkes med en liten **m** i peer-tabellen.
 
-### Beregninger i sektorpanelet
+### Markedspanel
+
+Én linje øverst i widgeten:
+
+| Post | Kilde | Merknad |
+|---|---|---|
+| OSEBX, OMXS30 | Yahoo (`OSEBX.OL`, `^OMX`) | |
+| Finans* | Egen beregning | Markedsvektet dagsendring for bankene i peers.csv. Oslo Børs' finansindeks finnes ikke gratis |
+| USD/NOK, EUR/NOK, SEK/NOK | Yahoo | |
+| NO 10å, SE 10å | Norges Bank (generiske statsrenter), Riksbanken (SEGVB10YC) | Åpne API-er. Endring i basispunkter: (siste − forrige) × 100 |
+
+## Varsler (macOS)
+
+Du får varsel i Varslingssenteret når:
+1. et av dine selskaper beveger seg mer enn ±3 % i løpet av dagen
+2. det kommer en ny børsmelding fra et av dine selskaper
+3. et nytt kursmål dukker opp i en nyhetsoverskrift
+4. kursen krysser ditt eget kursmål eller meglersnittet
+
+Hvert varsel sendes bare én gang (per selskap, retning og dag). Er det mer enn 6 på én gang, får du ett sammendrag.
+
+**Får du ingen varsler?** Åpne **Systeminnstillinger → Varslinger** og slå på varsler for **Skriptredigering** (Script
+Editor). macOS sender varsler fra `osascript` under det navnet.
+
+## Automatisk kjøring (launchd)
+
+Dobbeltklikk **AutoOppdatering.command**. Den slår på automatisk henting og sender et testvarsel.
+
+* launchd starter hentingen hvert 5. minutt. Skriptet henter hver gang i åpningstiden (man–fre 09:00–17:30 norsk tid,
+  ikke børsfridager), ellers bare én gang i timen.
+* Macen må være på (ikke i dvale) for at data skal hentes. Våkner den, hentes data innen 5 minutter.
+* Widgeten viser et rødt banner hvis data er eldre enn forventet.
+* Slå av: `bash ~/portefolje-widget/launchd/installer.sh stopp`
+* Logg: `data/logs/fetcher.log` og `data/logs/launchd.log`
+
+## Filer du kan dobbeltklikke
+
+| Fil | Hva den gjør |
+|---|---|
+| `Oppdater.command` | Henter ny kode, sjekker kilder, henter data og oppdaterer widgeten |
+| `FinnPeers.command` | Lager forslag til peer-liste |
+| `GodkjennPeers.command` | Tar forslaget i bruk som `config/peers.csv` |
+| `AutoOppdatering.command` | Slår på automatisk kjøring og tester varsler |
+
+## Beregninger i sektorpanelet
 
 * **Sektor i dag:** likevektet snitt av dagsendringen, der hver aksje teller likt. Banker = bank + forbruksbank.
   Viser også de 3 beste og 3 svakeste.
@@ -214,6 +257,50 @@ Manuelle tall merkes med en liten **m** i peer-tabellen.
 * **Valuta:** Forholdstallene er valutanøytrale. Markedsverdi for SEK-aksjer regnes om til NOK med SEK/NOK fra Yahoo, og
   kursen som er brukt, vises under tabellen.
 * Peer-kurser hentes hvert 15. minutt. Nøkkeltall hentes to ganger i døgnet.
+
+## Markedspanel
+
+Én linje øverst i widgeten:
+
+| Post | Kilde | Merknad |
+|---|---|---|
+| OSEBX, OMXS30 | Yahoo (`OSEBX.OL`, `^OMX`) | |
+| Finans* | Egen beregning | Markedsvektet dagsendring for bankene i peers.csv. Oslo Børs' finansindeks finnes ikke gratis |
+| USD/NOK, EUR/NOK, SEK/NOK | Yahoo | |
+| NO 10å, SE 10å | Norges Bank (generiske statsrenter), Riksbanken (SEGVB10YC) | Åpne API-er. Endring i basispunkter: (siste − forrige) × 100 |
+
+## Varsler (macOS)
+
+Du får varsel i Varslingssenteret når:
+1. et av dine selskaper beveger seg mer enn ±3 % i løpet av dagen
+2. det kommer en ny børsmelding fra et av dine selskaper
+3. et nytt kursmål dukker opp i en nyhetsoverskrift
+4. kursen krysser ditt eget kursmål eller meglersnittet
+
+Hvert varsel sendes bare én gang (per selskap, retning og dag). Er det mer enn 6 på én gang, får du ett sammendrag.
+
+**Får du ingen varsler?** Åpne **Systeminnstillinger → Varslinger** og slå på varsler for **Skriptredigering** (Script
+Editor). macOS sender varsler fra `osascript` under det navnet.
+
+## Automatisk kjøring (launchd)
+
+Dobbeltklikk **AutoOppdatering.command**. Den slår på automatisk henting og sender et testvarsel.
+
+* launchd starter hentingen hvert 5. minutt. Skriptet henter hver gang i åpningstiden (man–fre 09:00–17:30 norsk tid,
+  ikke børsfridager), ellers bare én gang i timen.
+* Macen må være på (ikke i dvale) for at data skal hentes. Våkner den, hentes data innen 5 minutter.
+* Widgeten viser et rødt banner hvis data er eldre enn forventet.
+* Slå av: `bash ~/portefolje-widget/launchd/installer.sh stopp`
+* Logg: `data/logs/fetcher.log` og `data/logs/launchd.log`
+
+## Filer du kan dobbeltklikke
+
+| Fil | Hva den gjør |
+|---|---|
+| `Oppdater.command` | Henter ny kode, sjekker kilder, henter data og oppdaterer widgeten |
+| `FinnPeers.command` | Lager forslag til peer-liste |
+| `GodkjennPeers.command` | Tar forslaget i bruk som `config/peers.csv` |
+| `AutoOppdatering.command` | Slår på automatisk kjøring og tester varsler |
 
 ## Beregninger
 
