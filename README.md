@@ -331,6 +331,9 @@ Formlene står med kommentarer i `fetcher/calc.py`.
   CSV-filen (metode B) og si fra.
 * **Widgeten reagerer ikke på klikk eller dra:** Sjekk Übersichts innstillinger (menylinjeikonet →
   Preferences) for interaksjon.
+* **«git pull» feiler med «untracked working tree files would be overwritten»:** To oppdateringer kjørte samtidig.
+  Kjør `cd ~/portefolje-widget && git status`. Står filene som nevnes der som «untracked», og du ikke har laget dem selv,
+  kan du kjøre `git clean -n` (viser hva som ville blitt slettet) og deretter `git pull` på nytt.
 * **Widgeten vises ikke:** I Übersicht-menyen, velg «Open Widgets Folder» og sjekk at `portefolje.widget` er der.
   Velg «Refresh All Widgets».
 

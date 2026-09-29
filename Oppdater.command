@@ -8,7 +8,8 @@ LOG="data/kjoringer/kjoring-$(date '+%Y%m%d-%H%M%S').txt"
 {
   echo "=== Oppdatering $(date '+%Y-%m-%d %H:%M') ==="
   echo; echo "--- Henter ny kode (git pull) ---"
-  git pull 2>&1
+  git pull 2>&1 || echo "!! git pull feilet – se README («Feilsøking»)"
+  git status --short 2>&1 | head -10
   echo; echo "--- Kildesjekk (probe) ---"
   .venv/bin/python -m fetcher probe 2>&1
   echo; echo "--- Henter data (run --force) ---"

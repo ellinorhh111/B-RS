@@ -16,6 +16,20 @@ def test_parse_norges_bank_sdmx():
     assert (y.rente, y.forrige, y.dato, y.endring_bp) == (4.02, 3.95, "2026-09-28", 7.0)
 
 
+def test_parse_norges_bank_picks_10y_among_many():
+    body = json.dumps({"data": {"dataSets": [{"series": {
+        "0:0:0": {"observations": {"0": ["3.50"], "1": ["3.55"]}},   # B / 3M / TBIL
+        "0:1:1": {"observations": {"0": ["3.95"], "1": ["4.02"]}},   # B / 10Y / GBON
+        "0:2:1": {"observations": {"0": ["3.70"], "1": ["3.72"]}}}}],  # B / 5Y / GBON
+        "structure": {"dimensions": {
+            "series": [{"id": "FREQ", "values": [{"id": "B"}]},
+                       {"id": "TENOR", "values": [{"id": "3M"}, {"id": "10Y"}, {"id": "5Y"}]},
+                       {"id": "INSTRUMENT_TYPE", "values": [{"id": "TBIL"}, {"id": "GBON"}]}],
+            "observation": [{"values": [{"id": "2026-09-25"}, {"id": "2026-09-28"}]}]}}}}).encode()
+    y = rates.parse_norges_bank(body)
+    assert (y.rente, y.forrige, y.endring_bp, y.dato) == (4.02, 3.95, 7.0, "2026-09-28")
+
+
 def test_parse_riksbank():
     body = json.dumps([{"date": "2026-09-25", "value": 3.29}, {"date": "2026-09-24", "value": 3.31}]).encode()
     y = rates.parse_riksbank(body)
