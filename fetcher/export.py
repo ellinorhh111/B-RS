@@ -90,6 +90,10 @@ def _market(store: Store, sector_today: dict | None) -> dict:
     bank = (sector_today or {}).get("bank") or {}
     finans = bank.get("vektet_pct")
     renter = json.loads(store.get_meta("yields") or "{}")
+    # Land som feilet og aldri har lyktes, vises som «–» med feilmeldingen som forklaring.
+    for land, msg in json.loads(store.get_meta("yields_errors") or "{}").items():
+        renter.setdefault(land, {"rente": None, "forrige": None, "dato": None, "endring_bp": None})
+        renter[land]["feil"] = msg
     return {"poster": items,
             "finans": {"endring_pct": finans, "forklaring": "Egen beregning: markedsvektet snitt for bankene i peers.csv"}
             if finans is not None else None,

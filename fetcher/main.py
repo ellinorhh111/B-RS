@@ -101,6 +101,11 @@ def fetch_peers(store: Store, source: PriceSource, peer_tickers: list[str], own:
         from .sources import rates
 
         found, rerrors = rates.ten_year_yields(now.date())
+        for land, msg in rerrors.items():
+            log.warning("Statsrente %s feilet: %s", land, msg)
+        import json as _json
+
+        store.set_meta("yields_errors", _json.dumps(rerrors))
         if found:
             import json as _json
 

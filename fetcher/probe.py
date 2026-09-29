@@ -100,6 +100,25 @@ def probe() -> int:
     lines += ["", "AVISFEEDER (selskapsnyheter, sektor, kursmålforslag)"]
     for name, (url, _lang) in news_rss.DIRECT_FEEDS.items():
         lines += _check(name, url)
+    lines += ["", "10-ÅRIGE STATSRENTER"]
+    from .sources import rates
+
+    for land, url in (("Norges Bank", rates.NORGES_BANK_10Y.format(frm=(today - timedelta(days=14)).isoformat())),
+                      ("Riksbanken", rates.RIKSBANK_10Y.format(frm=(today - timedelta(days=14)).isoformat()))):
+        try:
+            d = web.check(url)
+            if not d.allowed:
+                lines += [f"✗ {land}: robots.txt tillater ikke ({d.rule})"]
+                continue
+            body = web.fetch(url)
+            y = (rates.parse_norges_bank if land == "Norges Bank" else rates.parse_riksbank)(body)
+            lines += [f"✓ {land}: {y.rente:.2f} % ({y.dato}), endring {y.endring_bp} bp"]
+        except (web.FetchError, web.NotAllowed, ValueError) as e:
+            lines += [f"✗ {land}: {e}", f"    adresse: {url}"]
+            try:
+                lines += ["    svar (første 400 tegn): " + web._get(url)[1][:400].decode("utf-8", "replace").replace("\n", " ")]
+            except Exception:  # noqa: BLE001
+                pass
     lines += ["", "IKKE I BRUK (robots.txt forbyr): MFN.se («Disallow: *.rss$»), Google News («Disallow: /»)"]
     report = "\n".join(lines)
     print(report)

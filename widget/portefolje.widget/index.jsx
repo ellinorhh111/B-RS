@@ -526,8 +526,8 @@ const Market = ({ m }) => {
           <span className={changeClass(m.finans.endring_pct)}>{fmtPct(m.finans.endring_pct, 2)}</span></span>
       ) : null}
       {(m.renter || []).map((r) => (
-        <span key={r.land} title={`10-årig statsrente ${r.land === "NO" ? "Norge (Norges Bank)" : "Sverige (Riksbanken)"}, ${fmtDate(r.dato)}`}>
-          <span className="muted">{r.land} 10å</span> {fmtNum(r.rente, 2)} %
+        <span key={r.land} title={`10-årig statsrente ${r.land === "NO" ? "Norge (Norges Bank)" : "Sverige (Riksbanken)"}, ${fmtDate(r.dato)}${r.feil ? "\nSiste henting feilet: " + r.feil : ""}`}>
+          <span className="muted">{r.land} 10å</span> {isNum(r.rente) ? fmtNum(r.rente, 2) + " %" : "–"}{r.feil && !isNum(r.rente) ? <span className="old"> ⚠</span> : null}
           {isNum(r.endring_bp) ? <span className="muted small"> ({r.endring_bp > 0 ? "+" : r.endring_bp < 0 ? "−" : ""}{fmtNum(Math.abs(r.endring_bp), 0)} bp)</span> : null}
         </span>
       ))}
