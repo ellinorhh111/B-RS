@@ -13,6 +13,7 @@ function onOpen() {
     .addItem('Send oppsummering nå', 'dagligOppsummering')
     .addSeparator()
     .addItem('Stopp all automatikk', 'stoppAutomatikk')
+    .addItem('Rydd opp: fjern systemets kolonner fra denne fanen', 'ryddFane')
     .addToUi();
 }
 
@@ -173,4 +174,57 @@ function startStatusFraEgneKolonner_(tabell) {
     if (String(celle_(tabell, i, 'bedrift')).trim() === '') return;
     if (String(celle_(tabell, i, 'status')).trim() === '') settCelle_(tabell, i, 'status', statusFraEgneKolonner_(tabell, i));
   });
+}
+
+/**
+ * Fjerner kolonnene systemet har lagt til i fanen du har åpen (f.eks. hvis oppsettet ble kjørt på feil fane),
+ * pluss fanene Logg og Oversikt. Dine egne kolonner røres ikke. En kolonne som også kan være din egen
+ * (f.eks. «Veien videre»), fjernes bare hvis den er helt tom.
+ */
+function ryddFane() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const ark = ss.getActiveSheet();
+  const sisteKol = Math.max(ark.getLastColumn(), 1);
+  const overskrifter = ark.getRange(1, 1, 1, sisteKol).getValues()[0].map(v => String(v).trim());
+
+  const systemNokler = ['status', 'trengerSvar', 'nesteSteg', 'oppfolging', 'sistKontakt', 'retning', 'oppsummering',
+    'kontaktperson', 'telefon', 'interesse', 'domene', 'forsteKontakt', 'antall', 'trad', 'tradId', 'utkast', 'las'];
+  const systemNavn = systemNokler.map(n => KONFIG.KOLONNER[n]).filter(Boolean);
+  const kanVaereDine = ['bedrift', 'epost', 'notater'].map(n => KONFIG.KOLONNER[n]).filter(Boolean);
+  const antallRader = Math.max(ark.getLastRow() - 1, 0);
+  const erTom = k => antallRader === 0 ||
+    ark.getRange(2, k + 1, antallRader, 1).getValues().every(r => r[0] === '' || r[0] === false);
+
+  const slett = [];
+  overskrifter.forEach((h, k) => {
+    if (systemNavn.indexOf(h) >= 0) slett.push(k);
+    else if (kanVaereDine.indexOf(h) >= 0 && erTom(k) && k > 1) slett.push(k);
+  });
+  const fanerSomSlettes = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT].filter(n => ss.getSheetByName(n) && n !== ark.getName());
+
+  if (!slett.length && !fanerSomSlettes.length) {
+    ui.alert('Fant ingen kolonner fra systemet i fanen «' + ark.getName() + '».');
+    return;
+  }
+  const svar = ui.alert('Rydd opp i «' + ark.getName() + '»',
+    'Dette slettes:\n\nKolonner: ' + (slett.length ? slett.map(k => kolonneBokstav_(k + 1) + ' (' + overskrifter[k] + ')').join(', ') : 'ingen') +
+    '\nFaner: ' + (fanerSomSlettes.length ? fanerSomSlettes.join(', ') : 'ingen') +
+    '\n\nAutomatikken stoppes også. Fortsette?', ui.ButtonSet.YES_NO);
+  if (svar !== ui.Button.YES) return;
+
+  stoppAutomatikk(true);
+  // Fra høyre mot venstre, så kolonnenumrene ikke forskyves.
+  slett.sort((a, b) => b - a).forEach(k => ark.deleteColumn(k + 1));
+  // Fjern systemets fargeregler som pekte på de slettede kolonnene (hvis Sheets ikke allerede har gjort det).
+  try {
+    ark.setConditionalFormatRules(ark.getConditionalFormatRules().filter(r => !r.getRanges || r.getRanges().length > 0));
+  } catch (e) {
+    console.warn('Fargeregler: ' + e.message);
+  }
+  fanerSomSlettes.forEach(n => ss.deleteSheet(ss.getSheetByName(n)));
+  const egenskaper = PropertiesService.getScriptProperties();
+  if (egenskaper.getProperty('BEDRIFTSARK') === ark.getName()) egenskaper.deleteProperty('BEDRIFTSARK');
+
+  ui.alert('Ferdig. Åpne fanen med booking-tabellen og velg WFD → «1. Sett opp arket og automatikk».');
 }
