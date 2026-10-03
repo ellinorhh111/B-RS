@@ -82,31 +82,48 @@ NHH`,
   INNSATS: 'medium',            // low | medium | high – høyere gir grundigere svar, men tregere og dyrere.
   MAKS_AI_KALL_PER_KJORING: 8,  // Resten tas ved neste kjøring.
 
-  // --- Kolonner i arket «Bedrifter». ---
-  // Systemet finner kolonnene på overskriften i rad 1, så rekkefølgen er valgfri,
-  // og du kan ha egne kolonner i tillegg. Har du allerede et ark med andre overskrifter,
-  // endrer du teksten til høyre slik at den matcher dine overskrifter.
+  // --- Kolonner i bedriftsarket ---
+  // Systemet finner kolonnene på overskriften i rad 1, så rekkefølgen er valgfri.
+  // Venstre side er systemets navn, høyre side er overskriften i arket ditt.
+  // Kolonner som ikke finnes, legges til bakerst. Sett til null for å droppe en kolonne.
+  // Satt opp for arket «Claude WFD» (Column 1 = bedrift, Column 2 = kontakt/e-post, Veien videre = notater).
   KOLONNER: {
-    bedrift: 'Bedrift',
-    status: 'Status',
-    trengerSvar: 'Trenger svar',
-    nesteSteg: 'Neste steg',
-    oppfolging: 'Oppfølging dato',
-    sistKontakt: 'Sist kontakt',
-    retning: 'Siste e-post fra',
+    bedrift: 'Column 1',          // påkrevd
+    epost: 'Column 2',            // kontaktperson og e-post kan stå blandet her
+    notater: 'Veien videre',      // systemet skriver aldri her, men AI-en leser det
+    status: 'Status',             // påkrevd
+    trengerSvar: 'Trenger svar',  // påkrevd
+    sistKontakt: 'Sist kontakt',  // påkrevd
+    retning: 'Siste e-post fra',  // påkrevd
     oppsummering: 'Siste hendelse',
-    interesse: 'Interesse / pakke',
-    kontaktperson: 'Kontaktperson',
-    epost: 'E-post',
-    telefon: 'Telefon',
+    nesteSteg: 'Neste steg',
     domene: 'Domene',
-    forsteKontakt: 'Første kontakt',
-    antall: 'Antall e-poster',
     trad: 'Gmail-tråd',
-    tradId: 'Tråd-ID',
+    tradId: 'Tråd-ID',            // påkrevd
     utkast: 'Utkast laget',
-    notater: 'Notater',
     las: 'Lås',
+    // Disse er slått av for å holde arket ryddig. Skriv inn et kolonnenavn for å slå dem på.
+    kontaktperson: null,
+    telefon: null,
+    interesse: null,
+    oppfolging: null,
+    forsteKontakt: null,
+    antall: null,
+  },
+
+  // Dine egne statuskolonner som systemet fyller ut automatisk.
+  // Systemet fyller bare tomme celler (og «Nei»→«Ja», «venter»→«Ja»), og overskriver aldri noe annet du har skrevet.
+  //   Invitasjon sendt = Ja når vi har sendt e-post
+  //   Respons          = Ja når bedriften har svart
+  //   Med              = venter (interessert), Ja (bekreftet), Nei (takket nei)
+  // Sett SPEIL: null for å slå av.
+  SPEIL: {
+    invitasjonSendt: 'Invitasjon sendt',
+    respons: 'Respons',
+    med: 'Med',
+    ja: 'Ja',
+    nei: 'Nei',
+    venter: 'venter',
   },
 
   // Statusene i rekkefølge. Systemet flytter aldri en bedrift bakover i listen
@@ -114,7 +131,7 @@ NHH`,
   STATUSER: ['Ikke kontaktet', 'Kontaktet', 'Purret', 'I dialog', 'Interessert', 'Tilbud sendt', 'Bekreftet'],
   STATUS_NEI: 'Takket nei',
 
-  ARK_BEDRIFTER: 'Bedrifter',
+  ARK_BEDRIFTER: 'Bedrifter', // finnes ikke arket, brukes det første arket i regnearket
   ARK_LOGG: 'Logg',
   ARK_OVERSIKT: 'Oversikt',
   ARK_TRADER: '_Tråder',
@@ -148,10 +165,19 @@ function hentEllerLagArk_(ss, navn, overskrifter) {
   return ark;
 }
 
-/** Leser «Bedrifter» og legger til kolonner som mangler. */
+/** Arket med bedriftslisten: arket med navnet i ARK_BEDRIFTER, ellers det første arket. */
+function bedriftsark_(ss) {
+  return ss.getSheetByName(KONFIG.ARK_BEDRIFTER) || ss.getSheets()[0];
+}
+
+/**
+ * Leser bedriftslisten og legger til systemets kolonner som mangler (bakerst).
+ * Kolonner satt til null i KONFIG.KOLONNER brukes ikke.
+ * tabell.alle gir indeksen til alle overskrifter i arket, også dine egne.
+ */
 function lesBedrifter_() {
   const ss = hentRegneark_();
-  const ark = hentEllerLagArk_(ss, KONFIG.ARK_BEDRIFTER, null);
+  const ark = bedriftsark_(ss);
   let sisteKol = Math.max(ark.getLastColumn(), 1);
   let overskrifter = ark.getRange(1, 1, 1, sisteKol).getValues()[0].map(v => String(v).trim());
 
@@ -159,23 +185,29 @@ function lesBedrifter_() {
   const mangler = [];
   Object.keys(KONFIG.KOLONNER).forEach(nokkel => {
     const navn = KONFIG.KOLONNER[nokkel];
+    if (!navn) return;
     const i = overskrifter.findIndex(h => h.toLowerCase() === navn.toLowerCase());
     if (i >= 0) kol[nokkel] = i; else mangler.push(nokkel);
   });
   if (mangler.length) {
     // Første kolonne kan være helt tom i et nytt ark.
-    let start = overskrifter.filter(h => h !== '').length === 0 ? 0 : sisteKol;
+    const start = overskrifter.filter(h => h !== '').length === 0 ? 0 : sisteKol;
     mangler.forEach((nokkel, n) => { kol[nokkel] = start + n; });
     ark.getRange(1, start + 1, 1, mangler.length)
       .setValues([mangler.map(n => KONFIG.KOLONNER[n])]).setFontWeight('bold');
-    ark.setFrozenRows(1);
     sisteKol = start + mangler.length;
     overskrifter = ark.getRange(1, 1, 1, sisteKol).getValues()[0].map(v => String(v).trim());
   }
+  const alle = {};
+  overskrifter.forEach((h, i) => { if (h) alle[h] = i; });
 
+  // Bare rader med bedriftsnavn teller. Tomme avkrysningsbokser og nedtrekkslister lenger ned ignoreres.
   const antallRader = Math.max(ark.getLastRow() - 1, 0);
-  const verdier = antallRader ? ark.getRange(2, 1, antallRader, sisteKol).getValues() : [];
-  return { ark, kol, rader: verdier, antallKol: sisteKol };
+  let verdier = antallRader ? ark.getRange(2, 1, antallRader, sisteKol).getValues() : [];
+  let siste = -1;
+  verdier.forEach((r, i) => { if (String(r[kol.bedrift]).trim() !== '') siste = i; });
+  verdier = verdier.slice(0, siste + 1);
+  return { ark, kol, alle, rader: verdier, antallKol: sisteKol };
 }
 
 function celle_(tabell, rad, nokkel) {
@@ -227,6 +259,16 @@ function finnRad_(tabell, motpart, bedriftsnavn) {
       if (e && e.indexOf('@' + motpart.domene) >= 0) return i;
     }
   }
+  // Domenet ligner bedriftsnavnet: nbim.no → «NBIM (Premium)», dnb.no → «DNB Carnegie».
+  if (!motpart.privat && motpart.domene) {
+    const stamme = normaliserNavn_(motpart.domene.split('.').slice(-2, -1)[0]);
+    if (stamme.length >= 3) {
+      for (let i = 0; i < tabell.rader.length; i++) {
+        const n = normaliserNavn_(celle_(tabell, i, 'bedrift'));
+        if (n && (n === stamme || n.indexOf(stamme) === 0)) return i;
+      }
+    }
+  }
   const navn = normaliserNavn_(bedriftsnavn);
   if (navn) {
     for (let i = 0; i < tabell.rader.length; i++) {
@@ -238,6 +280,8 @@ function finnRad_(tabell, motpart, bedriftsnavn) {
 
 function normaliserNavn_(navn) {
   return String(navn || '').toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')          // «(Premium)», «(Partner)»
+    .replace(/^\s*[a-zæøå]{2,4}\s*:/, ' ')  // «SSE:»
     .replace(/\b(asa|as|sa|ab|ltd|inc|gruppen|group|norge|norway)\b/g, '')
     .replace(/[^a-z0-9æøå]/g, '');
 }
@@ -297,6 +341,54 @@ function lagreTrad_(trader, tradId, nokkel, sistDato, antall) {
     trader.ark.appendRow(rad);
     trader.kart[tradId] = { rad: trader.ark.getLastRow(), nokkel, sist: sistDato.getTime() };
   }
+}
+
+/** Setter verdien i en av dine egne kolonner (KONFIG.SPEIL), bare hvis den står tom eller i listen «erstatt». */
+function settEgenKolonne_(tabell, rad, overskrift, verdi, erstatt) {
+  const k = tabell.alle[overskrift];
+  if (k === undefined || !verdi) return;
+  const naa = String(tabell.rader[rad][k] === undefined ? '' : tabell.rader[rad][k]).trim();
+  if (naa === verdi) return;
+  if (naa !== '' && (erstatt || []).map(x => x.toLowerCase()).indexOf(naa.toLowerCase()) < 0) return;
+  try {
+    tabell.ark.getRange(rad + 2, k + 1).setValue(verdi);
+    tabell.rader[rad][k] = verdi;
+  } catch (e) {
+    console.warn('Kunne ikke skrive «' + verdi + '» i «' + overskrift + '»: ' + e.message);
+  }
+}
+
+/** Oppdaterer dine egne statuskolonner ut fra systemets status. Overskriver aldri noe du har fylt inn selv. */
+function speilStatus_(tabell, rad, status) {
+  const sp = KONFIG.SPEIL;
+  if (!sp) return;
+  const r = statusRang_(status);
+  const nei = status === KONFIG.STATUS_NEI;
+  if (sp.invitasjonSendt && (r >= 1 || nei)) settEgenKolonne_(tabell, rad, sp.invitasjonSendt, sp.ja, [sp.nei]);
+  if (sp.respons && (r >= statusRang_('I dialog') || nei)) settEgenKolonne_(tabell, rad, sp.respons, sp.ja, [sp.nei]);
+  if (sp.med) {
+    if (status === 'Bekreftet') settEgenKolonne_(tabell, rad, sp.med, sp.ja, [sp.venter]);
+    else if (nei) settEgenKolonne_(tabell, rad, sp.med, sp.nei, [sp.venter]);
+    else if (r >= statusRang_('Interessert')) settEgenKolonne_(tabell, rad, sp.med, sp.venter, []);
+  }
+}
+
+/** Status utledet fra dine egne kolonner (Invitasjon sendt / Respons / Med). */
+function statusFraEgneKolonner_(tabell, i) {
+  const sp = KONFIG.SPEIL;
+  if (!sp) return KONFIG.STATUSER[0];
+  const verdi = overskrift => {
+    const k = tabell.alle[overskrift];
+    return k === undefined ? '' : String(tabell.rader[i][k]).trim().toLowerCase();
+  };
+  const ja = String(sp.ja).toLowerCase(), nei = String(sp.nei).toLowerCase(), venter = String(sp.venter).toLowerCase();
+  const med = verdi(sp.med);
+  if (med === ja) return 'Bekreftet';
+  if (med === nei) return KONFIG.STATUS_NEI;
+  if (med === venter) return 'Interessert';
+  if (verdi(sp.respons) === ja) return 'I dialog';
+  if (verdi(sp.invitasjonSendt) === ja) return 'Kontaktet';
+  return KONFIG.STATUSER[0];
 }
 
 // ===================== AI.gs =====================
@@ -671,7 +763,7 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   if (!motpart.privat && !celle_(tabell, rad, 'domene')) settCelle_(tabell, rad, 'domene', motpart.domene);
 
   const bedrift = celle_(tabell, rad, 'bedrift');
-  const statusFor = celle_(tabell, rad, 'status') || KONFIG.STATUSER[0];
+  const statusFor = celle_(tabell, rad, 'status') || statusFraEgneKolonner_(tabell, rad);
   const last = erLast_(tabell, rad);
   const gammelSist = celle_(tabell, rad, 'sistKontakt');
   const erNyest = !(gammelSist instanceof Date) || siste.getDate() >= gammelSist;
@@ -693,6 +785,7 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   const statusEtter = last ? statusFor : velgStatus_(statusFor, foreslatt);
   if (!last) {
     settCelle_(tabell, rad, 'status', statusEtter);
+    speilStatus_(tabell, rad, statusEtter);
     if (analyse) {
       const kontaktperson = analyse.kontaktperson || (!erFraOss_(siste) ? motpart.navn : '');
       if (kontaktperson && !celle_(tabell, rad, 'kontaktperson')) settCelle_(tabell, rad, 'kontaktperson', kontaktperson);
@@ -752,13 +845,16 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   return true;
 }
 
+/** Hele raden med overskrifter, også dine egne kolonner (f.eks. «Med i fjor?» og «Veien videre»), til AI-en. */
 function radSomObjekt_(tabell, rad) {
+  const skjult = ['trad', 'tradId', 'utkast', 'las'].map(n => KONFIG.KOLONNER[n]).filter(Boolean);
   const o = {};
-  Object.keys(tabell.kol).forEach(n => {
-    if (['trad', 'tradId', 'utkast', 'las'].indexOf(n) >= 0) return;
-    let v = celle_(tabell, rad, n);
+  Object.keys(tabell.alle).forEach(h => {
+    if (skjult.indexOf(h) >= 0) return;
+    let v = tabell.rader[rad][tabell.alle[h]];
+    if (v === undefined || v === null || v === '') return;
     if (v instanceof Date) v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-    if (v !== '') o[KONFIG.KOLONNER[n]] = v;
+    o[h] = v;
   });
   return o;
 }
@@ -1043,27 +1139,39 @@ function settOpp() {
   const maksRad = Math.max(ark.getMaxRows(), 500);
   if (ark.getMaxRows() < maksRad) ark.insertRowsAfter(ark.getMaxRows(), maksRad - ark.getMaxRows());
   const kolonne = n => ark.getRange(2, tabell.kol[n] + 1, maksRad - 1, 1);
+  const har = n => tabell.kol[n] !== undefined;
 
   const alleStatuser = KONFIG.STATUSER.concat([KONFIG.STATUS_NEI]);
   kolonne('status').setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(alleStatuser, true).setAllowInvalid(true).build());
   kolonne('trengerSvar').setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(['Ja', 'Nei'], true).setAllowInvalid(true).build());
-  kolonne('las').insertCheckboxes();
-  ['sistKontakt', 'forsteKontakt', 'oppfolging', 'utkast'].forEach(n => kolonne(n).setNumberFormat('dd.mm.yyyy'));
-  ark.getRange(1, tabell.kol.tradId + 1).setNote('Brukes av systemet. Ikke endre.');
-  ark.getRange(1, tabell.kol.las + 1).setNote('Kryss av for at systemet aldri skal endre status eller kontaktinfo på denne raden.');
+  ['sistKontakt', 'forsteKontakt', 'oppfolging', 'utkast'].filter(har).forEach(n => kolonne(n).setNumberFormat('dd.mm.yyyy'));
+  if (har('tradId')) ark.getRange(1, tabell.kol.tradId + 1).setNote('Brukes av systemet. Ikke endre.');
+  if (har('las')) {
+    ark.getRange(1, tabell.kol.las + 1).setNote('Kryss av for at systemet aldri skal endre status eller kontaktinfo på denne raden.');
+    // Avkrysningsbokser bare på rader med bedrift, ellers ser arket ut som det har 500 rader.
+    if (tabell.rader.length) ark.getRange(2, tabell.kol.las + 1, tabell.rader.length, 1).insertCheckboxes();
+  }
 
-  // Fargekoding
+  // Startstatus ut fra dine egne kolonner for rader som ikke har status ennå.
+  startStatusFraEgneKolonner_(tabell);
+
+  // Fargekoding på systemets egne kolonner. Dine eksisterende regler beholdes.
   const bokstav = n => kolonneBokstav_(tabell.kol[n] + 1);
-  const helRad = ark.getRange(2, 1, maksRad - 1, tabell.antallKol);
-  const regler = [
-    [`=$${bokstav('trengerSvar')}2="Ja"`, '#f4cccc'],
-    [`=$${bokstav('status')}2="Bekreftet"`, '#d9ead3'],
-    [`=$${bokstav('status')}2="${KONFIG.STATUS_NEI}"`, '#eeeeee'],
-  ].map(([formel, farge]) => SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied(formel).setBackground(farge).setRanges([helRad]).build());
-  ark.setConditionalFormatRules(regler);
+  const nye = [
+    [`=$${bokstav('trengerSvar')}2="Ja"`, '#f4cccc', 'trengerSvar'],
+    [`=$${bokstav('status')}2="Bekreftet"`, '#d9ead3', 'status'],
+    [`=$${bokstav('status')}2="${KONFIG.STATUS_NEI}"`, '#eeeeee', 'status'],
+  ];
+  const formler = nye.map(r => r[0]);
+  const beholdes = ark.getConditionalFormatRules().filter(r => {
+    const b = r.getBooleanCondition && r.getBooleanCondition();
+    const v = b && b.getCriteriaValues ? b.getCriteriaValues() : [];
+    return !(v.length && formler.indexOf(String(v[0])) >= 0);
+  });
+  ark.setConditionalFormatRules(beholdes.concat(nye.map(([formel, farge, n]) => SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied(formel).setBackground(farge).setRanges([kolonne(n)]).build())));
 
   // Logg, tråder og oversikt
   hentEllerLagArk_(ss, KONFIG.ARK_LOGG, LOGG_KOLONNER);
@@ -1092,7 +1200,7 @@ function settOpp() {
 function lagOversikt_(ss, tabell) {
   const ark = hentEllerLagArk_(ss, KONFIG.ARK_OVERSIKT, null);
   ark.clear();
-  const navn = "'" + KONFIG.ARK_BEDRIFTER + "'!";
+  const navn = "'" + tabell.ark.getName() + "'!";
   const s = kolonneBokstav_(tabell.kol.status + 1);
   const t = kolonneBokstav_(tabell.kol.trengerSvar + 1);
   const b = kolonneBokstav_(tabell.kol.bedrift + 1);
@@ -1103,6 +1211,12 @@ function lagOversikt_(ss, tabell) {
   rader.push(['', '']);
   rader.push(['Bedrifter totalt', `=COUNTA(${navn}${b}2:${b})`]);
   rader.push(['Trenger svar nå', `=COUNTIF(${navn}${t}:${t},"Ja")`]);
+  const med = KONFIG.SPEIL && tabell.alle[KONFIG.SPEIL.med];
+  if (med !== undefined && med !== null) {
+    const m = kolonneBokstav_(med + 1);
+    rader.push([KONFIG.SPEIL.med + ' = ' + KONFIG.SPEIL.ja, `=COUNTIF(${navn}${m}2:${m},"${KONFIG.SPEIL.ja}")`]);
+    rader.push([KONFIG.SPEIL.med + ' = ' + KONFIG.SPEIL.venter, `=COUNTIF(${navn}${m}2:${m},"${KONFIG.SPEIL.venter}")`]);
+  }
   ark.getRange(1, 1, rader.length, 2).setValues(rader);
   ark.getRange(1, 1, 1, 2).setFontWeight('bold');
   ark.autoResizeColumns(1, 2);
@@ -1150,4 +1264,10 @@ function testAI() {
   } catch (e) {
     ui.alert('Noe gikk galt: ' + e.message);
   }
+}
+
+function startStatusFraEgneKolonner_(tabell) {
+  tabell.rader.forEach((_, i) => {
+    if (String(celle_(tabell, i, 'status')).trim() === '') settCelle_(tabell, i, 'status', statusFraEgneKolonner_(tabell, i));
+  });
 }

@@ -78,31 +78,48 @@ NHH`,
   INNSATS: 'medium',            // low | medium | high – høyere gir grundigere svar, men tregere og dyrere.
   MAKS_AI_KALL_PER_KJORING: 8,  // Resten tas ved neste kjøring.
 
-  // --- Kolonner i arket «Bedrifter». ---
-  // Systemet finner kolonnene på overskriften i rad 1, så rekkefølgen er valgfri,
-  // og du kan ha egne kolonner i tillegg. Har du allerede et ark med andre overskrifter,
-  // endrer du teksten til høyre slik at den matcher dine overskrifter.
+  // --- Kolonner i bedriftsarket ---
+  // Systemet finner kolonnene på overskriften i rad 1, så rekkefølgen er valgfri.
+  // Venstre side er systemets navn, høyre side er overskriften i arket ditt.
+  // Kolonner som ikke finnes, legges til bakerst. Sett til null for å droppe en kolonne.
+  // Satt opp for arket «Claude WFD» (Column 1 = bedrift, Column 2 = kontakt/e-post, Veien videre = notater).
   KOLONNER: {
-    bedrift: 'Bedrift',
-    status: 'Status',
-    trengerSvar: 'Trenger svar',
-    nesteSteg: 'Neste steg',
-    oppfolging: 'Oppfølging dato',
-    sistKontakt: 'Sist kontakt',
-    retning: 'Siste e-post fra',
+    bedrift: 'Column 1',          // påkrevd
+    epost: 'Column 2',            // kontaktperson og e-post kan stå blandet her
+    notater: 'Veien videre',      // systemet skriver aldri her, men AI-en leser det
+    status: 'Status',             // påkrevd
+    trengerSvar: 'Trenger svar',  // påkrevd
+    sistKontakt: 'Sist kontakt',  // påkrevd
+    retning: 'Siste e-post fra',  // påkrevd
     oppsummering: 'Siste hendelse',
-    interesse: 'Interesse / pakke',
-    kontaktperson: 'Kontaktperson',
-    epost: 'E-post',
-    telefon: 'Telefon',
+    nesteSteg: 'Neste steg',
     domene: 'Domene',
-    forsteKontakt: 'Første kontakt',
-    antall: 'Antall e-poster',
     trad: 'Gmail-tråd',
-    tradId: 'Tråd-ID',
+    tradId: 'Tråd-ID',            // påkrevd
     utkast: 'Utkast laget',
-    notater: 'Notater',
     las: 'Lås',
+    // Disse er slått av for å holde arket ryddig. Skriv inn et kolonnenavn for å slå dem på.
+    kontaktperson: null,
+    telefon: null,
+    interesse: null,
+    oppfolging: null,
+    forsteKontakt: null,
+    antall: null,
+  },
+
+  // Dine egne statuskolonner som systemet fyller ut automatisk.
+  // Systemet fyller bare tomme celler (og «Nei»→«Ja», «venter»→«Ja»), og overskriver aldri noe annet du har skrevet.
+  //   Invitasjon sendt = Ja når vi har sendt e-post
+  //   Respons          = Ja når bedriften har svart
+  //   Med              = venter (interessert), Ja (bekreftet), Nei (takket nei)
+  // Sett SPEIL: null for å slå av.
+  SPEIL: {
+    invitasjonSendt: 'Invitasjon sendt',
+    respons: 'Respons',
+    med: 'Med',
+    ja: 'Ja',
+    nei: 'Nei',
+    venter: 'venter',
   },
 
   // Statusene i rekkefølge. Systemet flytter aldri en bedrift bakover i listen
@@ -110,7 +127,7 @@ NHH`,
   STATUSER: ['Ikke kontaktet', 'Kontaktet', 'Purret', 'I dialog', 'Interessert', 'Tilbud sendt', 'Bekreftet'],
   STATUS_NEI: 'Takket nei',
 
-  ARK_BEDRIFTER: 'Bedrifter',
+  ARK_BEDRIFTER: 'Bedrifter', // finnes ikke arket, brukes det første arket i regnearket
   ARK_LOGG: 'Logg',
   ARK_OVERSIKT: 'Oversikt',
   ARK_TRADER: '_Tråder',

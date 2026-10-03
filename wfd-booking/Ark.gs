@@ -25,10 +25,19 @@ function hentEllerLagArk_(ss, navn, overskrifter) {
   return ark;
 }
 
-/** Leser «Bedrifter» og legger til kolonner som mangler. */
+/** Arket med bedriftslisten: arket med navnet i ARK_BEDRIFTER, ellers det første arket. */
+function bedriftsark_(ss) {
+  return ss.getSheetByName(KONFIG.ARK_BEDRIFTER) || ss.getSheets()[0];
+}
+
+/**
+ * Leser bedriftslisten og legger til systemets kolonner som mangler (bakerst).
+ * Kolonner satt til null i KONFIG.KOLONNER brukes ikke.
+ * tabell.alle gir indeksen til alle overskrifter i arket, også dine egne.
+ */
 function lesBedrifter_() {
   const ss = hentRegneark_();
-  const ark = hentEllerLagArk_(ss, KONFIG.ARK_BEDRIFTER, null);
+  const ark = bedriftsark_(ss);
   let sisteKol = Math.max(ark.getLastColumn(), 1);
   let overskrifter = ark.getRange(1, 1, 1, sisteKol).getValues()[0].map(v => String(v).trim());
 
@@ -36,23 +45,29 @@ function lesBedrifter_() {
   const mangler = [];
   Object.keys(KONFIG.KOLONNER).forEach(nokkel => {
     const navn = KONFIG.KOLONNER[nokkel];
+    if (!navn) return;
     const i = overskrifter.findIndex(h => h.toLowerCase() === navn.toLowerCase());
     if (i >= 0) kol[nokkel] = i; else mangler.push(nokkel);
   });
   if (mangler.length) {
     // Første kolonne kan være helt tom i et nytt ark.
-    let start = overskrifter.filter(h => h !== '').length === 0 ? 0 : sisteKol;
+    const start = overskrifter.filter(h => h !== '').length === 0 ? 0 : sisteKol;
     mangler.forEach((nokkel, n) => { kol[nokkel] = start + n; });
     ark.getRange(1, start + 1, 1, mangler.length)
       .setValues([mangler.map(n => KONFIG.KOLONNER[n])]).setFontWeight('bold');
-    ark.setFrozenRows(1);
     sisteKol = start + mangler.length;
     overskrifter = ark.getRange(1, 1, 1, sisteKol).getValues()[0].map(v => String(v).trim());
   }
+  const alle = {};
+  overskrifter.forEach((h, i) => { if (h) alle[h] = i; });
 
+  // Bare rader med bedriftsnavn teller. Tomme avkrysningsbokser og nedtrekkslister lenger ned ignoreres.
   const antallRader = Math.max(ark.getLastRow() - 1, 0);
-  const verdier = antallRader ? ark.getRange(2, 1, antallRader, sisteKol).getValues() : [];
-  return { ark, kol, rader: verdier, antallKol: sisteKol };
+  let verdier = antallRader ? ark.getRange(2, 1, antallRader, sisteKol).getValues() : [];
+  let siste = -1;
+  verdier.forEach((r, i) => { if (String(r[kol.bedrift]).trim() !== '') siste = i; });
+  verdier = verdier.slice(0, siste + 1);
+  return { ark, kol, alle, rader: verdier, antallKol: sisteKol };
 }
 
 function celle_(tabell, rad, nokkel) {
@@ -104,6 +119,16 @@ function finnRad_(tabell, motpart, bedriftsnavn) {
       if (e && e.indexOf('@' + motpart.domene) >= 0) return i;
     }
   }
+  // Domenet ligner bedriftsnavnet: nbim.no → «NBIM (Premium)», dnb.no → «DNB Carnegie».
+  if (!motpart.privat && motpart.domene) {
+    const stamme = normaliserNavn_(motpart.domene.split('.').slice(-2, -1)[0]);
+    if (stamme.length >= 3) {
+      for (let i = 0; i < tabell.rader.length; i++) {
+        const n = normaliserNavn_(celle_(tabell, i, 'bedrift'));
+        if (n && (n === stamme || n.indexOf(stamme) === 0)) return i;
+      }
+    }
+  }
   const navn = normaliserNavn_(bedriftsnavn);
   if (navn) {
     for (let i = 0; i < tabell.rader.length; i++) {
@@ -115,6 +140,8 @@ function finnRad_(tabell, motpart, bedriftsnavn) {
 
 function normaliserNavn_(navn) {
   return String(navn || '').toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')          // «(Premium)», «(Partner)»
+    .replace(/^\s*[a-zæøå]{2,4}\s*:/, ' ')  // «SSE:»
     .replace(/\b(asa|as|sa|ab|ltd|inc|gruppen|group|norge|norway)\b/g, '')
     .replace(/[^a-z0-9æøå]/g, '');
 }
@@ -174,4 +201,52 @@ function lagreTrad_(trader, tradId, nokkel, sistDato, antall) {
     trader.ark.appendRow(rad);
     trader.kart[tradId] = { rad: trader.ark.getLastRow(), nokkel, sist: sistDato.getTime() };
   }
+}
+
+/** Setter verdien i en av dine egne kolonner (KONFIG.SPEIL), bare hvis den står tom eller i listen «erstatt». */
+function settEgenKolonne_(tabell, rad, overskrift, verdi, erstatt) {
+  const k = tabell.alle[overskrift];
+  if (k === undefined || !verdi) return;
+  const naa = String(tabell.rader[rad][k] === undefined ? '' : tabell.rader[rad][k]).trim();
+  if (naa === verdi) return;
+  if (naa !== '' && (erstatt || []).map(x => x.toLowerCase()).indexOf(naa.toLowerCase()) < 0) return;
+  try {
+    tabell.ark.getRange(rad + 2, k + 1).setValue(verdi);
+    tabell.rader[rad][k] = verdi;
+  } catch (e) {
+    console.warn('Kunne ikke skrive «' + verdi + '» i «' + overskrift + '»: ' + e.message);
+  }
+}
+
+/** Oppdaterer dine egne statuskolonner ut fra systemets status. Overskriver aldri noe du har fylt inn selv. */
+function speilStatus_(tabell, rad, status) {
+  const sp = KONFIG.SPEIL;
+  if (!sp) return;
+  const r = statusRang_(status);
+  const nei = status === KONFIG.STATUS_NEI;
+  if (sp.invitasjonSendt && (r >= 1 || nei)) settEgenKolonne_(tabell, rad, sp.invitasjonSendt, sp.ja, [sp.nei]);
+  if (sp.respons && (r >= statusRang_('I dialog') || nei)) settEgenKolonne_(tabell, rad, sp.respons, sp.ja, [sp.nei]);
+  if (sp.med) {
+    if (status === 'Bekreftet') settEgenKolonne_(tabell, rad, sp.med, sp.ja, [sp.venter]);
+    else if (nei) settEgenKolonne_(tabell, rad, sp.med, sp.nei, [sp.venter]);
+    else if (r >= statusRang_('Interessert')) settEgenKolonne_(tabell, rad, sp.med, sp.venter, []);
+  }
+}
+
+/** Status utledet fra dine egne kolonner (Invitasjon sendt / Respons / Med). */
+function statusFraEgneKolonner_(tabell, i) {
+  const sp = KONFIG.SPEIL;
+  if (!sp) return KONFIG.STATUSER[0];
+  const verdi = overskrift => {
+    const k = tabell.alle[overskrift];
+    return k === undefined ? '' : String(tabell.rader[i][k]).trim().toLowerCase();
+  };
+  const ja = String(sp.ja).toLowerCase(), nei = String(sp.nei).toLowerCase(), venter = String(sp.venter).toLowerCase();
+  const med = verdi(sp.med);
+  if (med === ja) return 'Bekreftet';
+  if (med === nei) return KONFIG.STATUS_NEI;
+  if (med === venter) return 'Interessert';
+  if (verdi(sp.respons) === ja) return 'I dialog';
+  if (verdi(sp.invitasjonSendt) === ja) return 'Kontaktet';
+  return KONFIG.STATUSER[0];
 }

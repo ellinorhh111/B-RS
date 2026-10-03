@@ -25,27 +25,39 @@ function settOpp() {
   const maksRad = Math.max(ark.getMaxRows(), 500);
   if (ark.getMaxRows() < maksRad) ark.insertRowsAfter(ark.getMaxRows(), maksRad - ark.getMaxRows());
   const kolonne = n => ark.getRange(2, tabell.kol[n] + 1, maksRad - 1, 1);
+  const har = n => tabell.kol[n] !== undefined;
 
   const alleStatuser = KONFIG.STATUSER.concat([KONFIG.STATUS_NEI]);
   kolonne('status').setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(alleStatuser, true).setAllowInvalid(true).build());
   kolonne('trengerSvar').setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(['Ja', 'Nei'], true).setAllowInvalid(true).build());
-  kolonne('las').insertCheckboxes();
-  ['sistKontakt', 'forsteKontakt', 'oppfolging', 'utkast'].forEach(n => kolonne(n).setNumberFormat('dd.mm.yyyy'));
-  ark.getRange(1, tabell.kol.tradId + 1).setNote('Brukes av systemet. Ikke endre.');
-  ark.getRange(1, tabell.kol.las + 1).setNote('Kryss av for at systemet aldri skal endre status eller kontaktinfo på denne raden.');
+  ['sistKontakt', 'forsteKontakt', 'oppfolging', 'utkast'].filter(har).forEach(n => kolonne(n).setNumberFormat('dd.mm.yyyy'));
+  if (har('tradId')) ark.getRange(1, tabell.kol.tradId + 1).setNote('Brukes av systemet. Ikke endre.');
+  if (har('las')) {
+    ark.getRange(1, tabell.kol.las + 1).setNote('Kryss av for at systemet aldri skal endre status eller kontaktinfo på denne raden.');
+    // Avkrysningsbokser bare på rader med bedrift, ellers ser arket ut som det har 500 rader.
+    if (tabell.rader.length) ark.getRange(2, tabell.kol.las + 1, tabell.rader.length, 1).insertCheckboxes();
+  }
 
-  // Fargekoding
+  // Startstatus ut fra dine egne kolonner for rader som ikke har status ennå.
+  startStatusFraEgneKolonner_(tabell);
+
+  // Fargekoding på systemets egne kolonner. Dine eksisterende regler beholdes.
   const bokstav = n => kolonneBokstav_(tabell.kol[n] + 1);
-  const helRad = ark.getRange(2, 1, maksRad - 1, tabell.antallKol);
-  const regler = [
-    [`=$${bokstav('trengerSvar')}2="Ja"`, '#f4cccc'],
-    [`=$${bokstav('status')}2="Bekreftet"`, '#d9ead3'],
-    [`=$${bokstav('status')}2="${KONFIG.STATUS_NEI}"`, '#eeeeee'],
-  ].map(([formel, farge]) => SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied(formel).setBackground(farge).setRanges([helRad]).build());
-  ark.setConditionalFormatRules(regler);
+  const nye = [
+    [`=$${bokstav('trengerSvar')}2="Ja"`, '#f4cccc', 'trengerSvar'],
+    [`=$${bokstav('status')}2="Bekreftet"`, '#d9ead3', 'status'],
+    [`=$${bokstav('status')}2="${KONFIG.STATUS_NEI}"`, '#eeeeee', 'status'],
+  ];
+  const formler = nye.map(r => r[0]);
+  const beholdes = ark.getConditionalFormatRules().filter(r => {
+    const b = r.getBooleanCondition && r.getBooleanCondition();
+    const v = b && b.getCriteriaValues ? b.getCriteriaValues() : [];
+    return !(v.length && formler.indexOf(String(v[0])) >= 0);
+  });
+  ark.setConditionalFormatRules(beholdes.concat(nye.map(([formel, farge, n]) => SpreadsheetApp.newConditionalFormatRule()
+    .whenFormulaSatisfied(formel).setBackground(farge).setRanges([kolonne(n)]).build())));
 
   // Logg, tråder og oversikt
   hentEllerLagArk_(ss, KONFIG.ARK_LOGG, LOGG_KOLONNER);
@@ -74,7 +86,7 @@ function settOpp() {
 function lagOversikt_(ss, tabell) {
   const ark = hentEllerLagArk_(ss, KONFIG.ARK_OVERSIKT, null);
   ark.clear();
-  const navn = "'" + KONFIG.ARK_BEDRIFTER + "'!";
+  const navn = "'" + tabell.ark.getName() + "'!";
   const s = kolonneBokstav_(tabell.kol.status + 1);
   const t = kolonneBokstav_(tabell.kol.trengerSvar + 1);
   const b = kolonneBokstav_(tabell.kol.bedrift + 1);
@@ -85,6 +97,12 @@ function lagOversikt_(ss, tabell) {
   rader.push(['', '']);
   rader.push(['Bedrifter totalt', `=COUNTA(${navn}${b}2:${b})`]);
   rader.push(['Trenger svar nå', `=COUNTIF(${navn}${t}:${t},"Ja")`]);
+  const med = KONFIG.SPEIL && tabell.alle[KONFIG.SPEIL.med];
+  if (med !== undefined && med !== null) {
+    const m = kolonneBokstav_(med + 1);
+    rader.push([KONFIG.SPEIL.med + ' = ' + KONFIG.SPEIL.ja, `=COUNTIF(${navn}${m}2:${m},"${KONFIG.SPEIL.ja}")`]);
+    rader.push([KONFIG.SPEIL.med + ' = ' + KONFIG.SPEIL.venter, `=COUNTIF(${navn}${m}2:${m},"${KONFIG.SPEIL.venter}")`]);
+  }
   ark.getRange(1, 1, rader.length, 2).setValues(rader);
   ark.getRange(1, 1, 1, 2).setFontWeight('bold');
   ark.autoResizeColumns(1, 2);
@@ -132,4 +150,10 @@ function testAI() {
   } catch (e) {
     ui.alert('Noe gikk galt: ' + e.message);
   }
+}
+
+function startStatusFraEgneKolonner_(tabell) {
+  tabell.rader.forEach((_, i) => {
+    if (String(celle_(tabell, i, 'status')).trim() === '') settCelle_(tabell, i, 'status', statusFraEgneKolonner_(tabell, i));
+  });
 }

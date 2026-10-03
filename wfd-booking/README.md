@@ -46,7 +46,8 @@ Det viktigste:
 | `SIGNATUR` | Signaturen din. |
 | `NOKKELORD` | Ord som skiller WFD-mail fra annen mail. Legg til arrangementets fulle navn. |
 | `HISTORIKK_FRA_DATO` | Hvor langt tilbake historikkimporten skal lete (f.eks. fjorårets booking-start). |
-| `KOLONNER` | Bare hvis du har et eksisterende ark med andre overskrifter. Skriv dine overskrifter til høyre, så bruker systemet dem. Kolonner som mangler, legges til bakerst. |
+| `KOLONNER` | Satt opp for arket «Claude WFD» (Column 1 = bedrift, Column 2 = kontakt/e-post, Veien videre = notater). Systemets egne kolonner legges til bakerst. Sett en kolonne til `null` for å droppe den. |
+| `SPEIL` | Dine egne kolonner *Invitasjon sendt*, *Respons* og *Med* fylles ut automatisk, men bare der cellen er tom. Det du har skrevet selv, overskrives aldri. |
 
 ### 3. Koble til AI (Claude)
 

@@ -212,7 +212,7 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   if (!motpart.privat && !celle_(tabell, rad, 'domene')) settCelle_(tabell, rad, 'domene', motpart.domene);
 
   const bedrift = celle_(tabell, rad, 'bedrift');
-  const statusFor = celle_(tabell, rad, 'status') || KONFIG.STATUSER[0];
+  const statusFor = celle_(tabell, rad, 'status') || statusFraEgneKolonner_(tabell, rad);
   const last = erLast_(tabell, rad);
   const gammelSist = celle_(tabell, rad, 'sistKontakt');
   const erNyest = !(gammelSist instanceof Date) || siste.getDate() >= gammelSist;
@@ -234,6 +234,7 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   const statusEtter = last ? statusFor : velgStatus_(statusFor, foreslatt);
   if (!last) {
     settCelle_(tabell, rad, 'status', statusEtter);
+    speilStatus_(tabell, rad, statusEtter);
     if (analyse) {
       const kontaktperson = analyse.kontaktperson || (!erFraOss_(siste) ? motpart.navn : '');
       if (kontaktperson && !celle_(tabell, rad, 'kontaktperson')) settCelle_(tabell, rad, 'kontaktperson', kontaktperson);
@@ -293,13 +294,16 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   return true;
 }
 
+/** Hele raden med overskrifter, også dine egne kolonner (f.eks. «Med i fjor?» og «Veien videre»), til AI-en. */
 function radSomObjekt_(tabell, rad) {
+  const skjult = ['trad', 'tradId', 'utkast', 'las'].map(n => KONFIG.KOLONNER[n]).filter(Boolean);
   const o = {};
-  Object.keys(tabell.kol).forEach(n => {
-    if (['trad', 'tradId', 'utkast', 'las'].indexOf(n) >= 0) return;
-    let v = celle_(tabell, rad, n);
+  Object.keys(tabell.alle).forEach(h => {
+    if (skjult.indexOf(h) >= 0) return;
+    let v = tabell.rader[rad][tabell.alle[h]];
+    if (v === undefined || v === null || v === '') return;
     if (v instanceof Date) v = Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd');
-    if (v !== '') o[KONFIG.KOLONNER[n]] = v;
+    o[h] = v;
   });
   return o;
 }
