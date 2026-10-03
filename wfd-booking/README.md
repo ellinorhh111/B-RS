@@ -28,9 +28,10 @@ installeres i kontoen der WFD-mailene kommer inn (NHH-kontoen din, s242961).
 
 1. Åpne booking-regnearket (logget inn med riktig konto).
 2. Gå til **Utvidelser → Apps Script**.
-3. Slett innholdet i `Kode.gs`. Lag én skriptfil per fil i denne mappen (trykk **+** ved «Filer» → **Skript**),
+3. **Enklest:** slett alt i `Kode.gs` og lim inn hele `WFD-alt-i-en.gs`.
+   (Alternativt: slett innholdet i `Kode.gs` og lag én skriptfil per fil i denne mappen (trykk **+** ved «Filer» → **Skript**),
    gi den samme navn og lim inn innholdet:
-   `Konfig`, `Ark`, `AI`, `Innboks`, `Historikk`, `Oppfolging`, `Oppsett`.
+   `Konfig`, `Ark`, `AI`, `Innboks`, `Historikk`, `Oppfolging`, `Oppsett`.)
 4. Under **Prosjektinnstillinger** (tannhjulet): huk av for «Vis manifestfilen appsscript.json i redigeringsprogrammet»,
    og lim inn innholdet fra `appsscript.json`. Det setter riktig tidssone (Europe/Oslo).
 5. Lagre (Ctrl/Cmd + S).
