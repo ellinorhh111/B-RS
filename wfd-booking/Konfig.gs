@@ -127,7 +127,7 @@ NHH`,
   STATUSER: ['Ikke kontaktet', 'Kontaktet', 'Purret', 'I dialog', 'Interessert', 'Tilbud sendt', 'Bekreftet'],
   STATUS_NEI: 'Takket nei',
 
-  ARK_BEDRIFTER: 'Bedrifter', // finnes ikke arket, brukes det første arket i regnearket
+  ARK_BEDRIFTER: 'Bedrifter', // reserve hvis du ikke har valgt fane under «Sett opp arket»
   ARK_LOGG: 'Logg',
   ARK_OVERSIKT: 'Oversikt',
   ARK_TRADER: '_Tråder',

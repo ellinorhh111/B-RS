@@ -131,7 +131,7 @@ NHH`,
   STATUSER: ['Ikke kontaktet', 'Kontaktet', 'Purret', 'I dialog', 'Interessert', 'Tilbud sendt', 'Bekreftet'],
   STATUS_NEI: 'Takket nei',
 
-  ARK_BEDRIFTER: 'Bedrifter', // finnes ikke arket, brukes det første arket i regnearket
+  ARK_BEDRIFTER: 'Bedrifter', // reserve hvis du ikke har valgt fane under «Sett opp arket»
   ARK_LOGG: 'Logg',
   ARK_OVERSIKT: 'Oversikt',
   ARK_TRADER: '_Tråder',
@@ -165,9 +165,17 @@ function hentEllerLagArk_(ss, navn, overskrifter) {
   return ark;
 }
 
-/** Arket med bedriftslisten: arket med navnet i ARK_BEDRIFTER, ellers det første arket. */
+/**
+ * Arket med bedriftslisten: fanen du valgte under «Sett opp arket», ellers fanen som heter ARK_BEDRIFTER.
+ * Finnes ingen av dem, stopper systemet i stedet for å gjette.
+ */
 function bedriftsark_(ss) {
-  return ss.getSheetByName(KONFIG.ARK_BEDRIFTER) || ss.getSheets()[0];
+  const valgt = PropertiesService.getScriptProperties().getProperty('BEDRIFTSARK');
+  const ark = (valgt && ss.getSheetByName(valgt)) || ss.getSheetByName(KONFIG.ARK_BEDRIFTER);
+  if (!ark) {
+    throw new Error('Finner ikke fanen med bedriftslisten. Åpne fanen og velg WFD → «Sett opp arket og automatikk».');
+  }
+  return ark;
 }
 
 /**
@@ -1132,7 +1140,21 @@ function onOpen() {
 
 function settOpp() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  PropertiesService.getScriptProperties().setProperty('REGNEARK_ID', ss.getId());
+  const ui = SpreadsheetApp.getUi();
+  const aktiv = ss.getActiveSheet().getName();
+  const interne = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_TRADER];
+  if (interne.indexOf(aktiv) >= 0) {
+    ui.alert('Åpne fanen med bedriftslisten først, og velg menyvalget på nytt.');
+    return;
+  }
+  const svar = ui.alert('Velg bedriftsliste',
+    'Skal fanen «' + aktiv + '» brukes som bedriftslisten?\n\n' +
+    'Systemet legger til sine kolonner til høyre for listen og leser e-postene inn hit. ' +
+    'Er det feil fane, trykk Nei, åpne riktig fane og prøv igjen.', ui.ButtonSet.YES_NO);
+  if (svar !== ui.Button.YES) return;
+  const egenskaper = PropertiesService.getScriptProperties();
+  egenskaper.setProperty('REGNEARK_ID', ss.getId());
+  egenskaper.setProperty('BEDRIFTSARK', aktiv);
 
   const tabell = lesBedrifter_(); // legger til kolonner som mangler
   const ark = tabell.ark;
@@ -1151,7 +1173,9 @@ function settOpp() {
   if (har('las')) {
     ark.getRange(1, tabell.kol.las + 1).setNote('Kryss av for at systemet aldri skal endre status eller kontaktinfo på denne raden.');
     // Avkrysningsbokser bare på rader med bedrift, ellers ser arket ut som det har 500 rader.
-    if (tabell.rader.length) ark.getRange(2, tabell.kol.las + 1, tabell.rader.length, 1).insertCheckboxes();
+    tabell.rader.forEach((_, i) => {
+      if (String(celle_(tabell, i, 'bedrift')).trim() !== '') ark.getRange(i + 2, tabell.kol.las + 1).insertCheckboxes();
+    });
   }
 
   // Startstatus ut fra dine egne kolonner for rader som ikke har status ennå.
@@ -1194,7 +1218,7 @@ function settOpp() {
     '• Innboksen sjekkes hvert ' + KONFIG.SJEKK_HVERT_MINUTT + '. minutt.\n' +
     (KONFIG.DAGLIG_OPPSUMMERING_KL !== null ? '• Daglig oppsummering kl. ' + KONFIG.DAGLIG_OPPSUMMERING_KL + '.\n' : '') +
     (harAI_() ? '• AI er koblet til.\n' : '• AI er IKKE koblet til ennå (legg inn ANTHROPIC_API_KEY, se README).\n') +
-    '\nNeste steg: «Test AI-tilkoblingen», deretter «Importer historikk fra Gmail».');
+    (harAI_() ? '\nNeste steg: «Test AI-tilkoblingen», deretter «Importer historikk fra Gmail».' : ''));
 }
 
 function lagOversikt_(ss, tabell) {
@@ -1268,6 +1292,7 @@ function testAI() {
 
 function startStatusFraEgneKolonner_(tabell) {
   tabell.rader.forEach((_, i) => {
+    if (String(celle_(tabell, i, 'bedrift')).trim() === '') return;
     if (String(celle_(tabell, i, 'status')).trim() === '') settCelle_(tabell, i, 'status', statusFraEgneKolonner_(tabell, i));
   });
 }

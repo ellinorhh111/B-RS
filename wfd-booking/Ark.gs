@@ -25,9 +25,17 @@ function hentEllerLagArk_(ss, navn, overskrifter) {
   return ark;
 }
 
-/** Arket med bedriftslisten: arket med navnet i ARK_BEDRIFTER, ellers det første arket. */
+/**
+ * Arket med bedriftslisten: fanen du valgte under «Sett opp arket», ellers fanen som heter ARK_BEDRIFTER.
+ * Finnes ingen av dem, stopper systemet i stedet for å gjette.
+ */
 function bedriftsark_(ss) {
-  return ss.getSheetByName(KONFIG.ARK_BEDRIFTER) || ss.getSheets()[0];
+  const valgt = PropertiesService.getScriptProperties().getProperty('BEDRIFTSARK');
+  const ark = (valgt && ss.getSheetByName(valgt)) || ss.getSheetByName(KONFIG.ARK_BEDRIFTER);
+  if (!ark) {
+    throw new Error('Finner ikke fanen med bedriftslisten. Åpne fanen og velg WFD → «Sett opp arket og automatikk».');
+  }
+  return ark;
 }
 
 /**
