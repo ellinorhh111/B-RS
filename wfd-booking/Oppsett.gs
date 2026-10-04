@@ -12,6 +12,7 @@ function onOpen() {
     .addItem('Lag purreutkast', 'lagPurreutkast')
     .addItem('Send oppsummering nå', 'dagligOppsummering')
     .addSeparator()
+    .addItem('Gjør arbeidsboken ryddig og pen', 'ryddArbeidsbok')
     .addItem('Stopp all automatikk', 'stoppAutomatikk')
     .addItem('Rydd opp: fjern systemets kolonner fra denne fanen', 'ryddFane')
     .addToUi();
@@ -60,25 +61,11 @@ function settOpp() {
   // Startstatus ut fra dine egne kolonner for rader som ikke har status ennå.
   startStatusFraEgneKolonner_(tabell);
 
-  // Fargekoding på systemets egne kolonner. Dine eksisterende regler beholdes.
-  const bokstav = n => kolonneBokstav_(tabell.kol[n] + 1);
-  const nye = [
-    [`=$${bokstav('trengerSvar')}2="Ja"`, '#f4cccc', 'trengerSvar'],
-    [`=$${bokstav('status')}2="Bekreftet"`, '#d9ead3', 'status'],
-    [`=$${bokstav('status')}2="${KONFIG.STATUS_NEI}"`, '#eeeeee', 'status'],
-  ];
-  const formler = nye.map(r => r[0]);
-  const beholdes = ark.getConditionalFormatRules().filter(r => {
-    const b = r.getBooleanCondition && r.getBooleanCondition();
-    const v = b && b.getCriteriaValues ? b.getCriteriaValues() : [];
-    return !(v.length && formler.indexOf(String(v[0])) >= 0);
-  });
-  ark.setConditionalFormatRules(beholdes.concat(nye.map(([formel, farge, n]) => SpreadsheetApp.newConditionalFormatRule()
-    .whenFormulaSatisfied(formel).setBackground(farge).setRanges([kolonne(n)]).build())));
-
   // Logg, tråder og oversikt
   hentEllerLagArk_(ss, KONFIG.ARK_LOGG, LOGG_KOLONNER);
   hentEllerLagArk_(ss, KONFIG.ARK_TRADER, TRAD_KOLONNER).hideSheet();
+  stilBooking_(tabell);
+  stilLogg_(ss);
   lagOversikt_(ss, tabell);
 
   // Gmail-etiketter
@@ -98,31 +85,6 @@ function settOpp() {
     (KONFIG.DAGLIG_OPPSUMMERING_KL !== null ? '• Daglig oppsummering kl. ' + KONFIG.DAGLIG_OPPSUMMERING_KL + '.\n' : '') +
     (harAI_() ? '• AI er koblet til.\n' : '• AI er IKKE koblet til ennå (legg inn ANTHROPIC_API_KEY, se README).\n') +
     (harAI_() ? '\nNeste steg: «Test AI-tilkoblingen», deretter «Importer historikk fra Gmail».' : ''));
-}
-
-function lagOversikt_(ss, tabell) {
-  const ark = hentEllerLagArk_(ss, KONFIG.ARK_OVERSIKT, null);
-  ark.clear();
-  const navn = "'" + tabell.ark.getName() + "'!";
-  const s = kolonneBokstav_(tabell.kol.status + 1);
-  const t = kolonneBokstav_(tabell.kol.trengerSvar + 1);
-  const b = kolonneBokstav_(tabell.kol.bedrift + 1);
-  const rader = [['Status', 'Antall']];
-  KONFIG.STATUSER.concat([KONFIG.STATUS_NEI]).forEach(st => {
-    rader.push([st, `=COUNTIF(${navn}${s}:${s},"${st}")`]);
-  });
-  rader.push(['', '']);
-  rader.push(['Bedrifter totalt', `=COUNTA(${navn}${b}2:${b})`]);
-  rader.push(['Trenger svar nå', `=COUNTIF(${navn}${t}:${t},"Ja")`]);
-  const med = KONFIG.SPEIL && tabell.alle[KONFIG.SPEIL.med];
-  if (med !== undefined && med !== null) {
-    const m = kolonneBokstav_(med + 1);
-    rader.push([KONFIG.SPEIL.med + ' = ' + KONFIG.SPEIL.ja, `=COUNTIF(${navn}${m}2:${m},"${KONFIG.SPEIL.ja}")`]);
-    rader.push([KONFIG.SPEIL.med + ' = ' + KONFIG.SPEIL.venter, `=COUNTIF(${navn}${m}2:${m},"${KONFIG.SPEIL.venter}")`]);
-  }
-  ark.getRange(1, 1, rader.length, 2).setValues(rader);
-  ark.getRange(1, 1, 1, 2).setFontWeight('bold');
-  ark.autoResizeColumns(1, 2);
 }
 
 function kolonneBokstav_(n) {
@@ -194,8 +156,8 @@ function ryddFane() {
 
   const systemNokler = ['status', 'trengerSvar', 'nesteSteg', 'oppfolging', 'sistKontakt', 'retning', 'oppsummering',
     'kontaktperson', 'telefon', 'interesse', 'domene', 'forsteKontakt', 'antall', 'trad', 'tradId', 'utkast', 'las'];
-  const systemNavn = systemNokler.map(n => KONFIG.KOLONNER[n]).filter(Boolean);
-  const kanVaereDine = ['bedrift', 'epost', 'notater'].map(n => KONFIG.KOLONNER[n]).filter(Boolean);
+  const systemNavn = [].concat.apply([], systemNokler.map(kolonnenavn_));
+  const kanVaereDine = [].concat.apply([], ['bedrift', 'epost', 'notater'].map(kolonnenavn_));
   const antallRader = Math.max(ark.getLastRow() - 1, 0);
   const erTom = k => antallRader === 0 ||
     ark.getRange(2, k + 1, antallRader, 1).getValues().every(r => r[0] === '' || r[0] === false);

@@ -31,7 +31,7 @@ installeres i kontoen der WFD-mailene kommer inn (NHH-kontoen din, s242961).
 3. **Enklest:** slett alt i `Kode.gs` og lim inn hele `WFD-alt-i-en.gs`.
    (Alternativt: slett innholdet i `Kode.gs` og lag én skriptfil per fil i denne mappen (trykk **+** ved «Filer» → **Skript**),
    gi den samme navn og lim inn innholdet:
-   `Konfig`, `Ark`, `AI`, `Innboks`, `Historikk`, `Oppfolging`, `Oppsett`.)
+   `Konfig`, `Ark`, `AI`, `Innboks`, `Historikk`, `Oppfolging`, `Oppsett`, `Utseende`.)
 4. Under **Prosjektinnstillinger** (tannhjulet): huk av for «Vis manifestfilen appsscript.json i redigeringsprogrammet»,
    og lim inn innholdet fra `appsscript.json`. Det setter riktig tidssone (Europe/Oslo).
 5. Lagre (Ctrl/Cmd + S).
@@ -70,6 +70,13 @@ Sett `INNSATS: 'low'` i `Konfig` for å gjøre det billigere og raskere.
    ikke godkjent av Google. Det er normalt.
 3. **WFD → 2. Test AI-tilkoblingen.** Du skal få se et eksempelutkast.
 4. **WFD → 3. Importer historikk fra Gmail.** Går i bakgrunnen, og du får en e-post når den er ferdig.
+
+## Ryddig arbeidsbok
+
+**WFD → Gjør arbeidsboken ryddig og pen** gir fanene faste navn (Oversikt, Booking, Bedriftsliste, Logg),
+gir «Column 1/2» ordentlige navn (Bedrift/Kontakt), farger systemkolonnene og statusene, skjuler tekniske
+kolonner og gjør Oversikt om til et dashbord med nøkkeltall, statusfordeling og listene «Trenger svar fra deg» og
+«Bør purres». Den viser hva som blir gjort før noe endres, og spør for seg før tomme faner slettes.
 
 ## Slik bruker du det i hverdagen
 

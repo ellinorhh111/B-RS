@@ -296,7 +296,7 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
 
 /** Hele raden med overskrifter, også dine egne kolonner (f.eks. «Med i fjor?» og «Veien videre»), til AI-en. */
 function radSomObjekt_(tabell, rad) {
-  const skjult = ['trad', 'tradId', 'utkast', 'las'].map(n => KONFIG.KOLONNER[n]).filter(Boolean);
+  const skjult = [].concat.apply([], ['trad', 'tradId', 'utkast', 'las'].map(kolonnenavn_));
   const o = {};
   Object.keys(tabell.alle).forEach(h => {
     if (skjult.indexOf(h) >= 0) return;

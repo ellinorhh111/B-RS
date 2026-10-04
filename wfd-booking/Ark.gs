@@ -25,6 +25,13 @@ function hentEllerLagArk_(ss, navn, overskrifter) {
   return ark;
 }
 
+/** Alle navn en kolonne kan ha (første er det foretrukne). Tom liste hvis kolonnen er slått av. */
+function kolonnenavn_(nokkel) {
+  const v = KONFIG.KOLONNER[nokkel];
+  if (!v) return [];
+  return Array.isArray(v) ? v : [v];
+}
+
 /**
  * Arket med bedriftslisten: fanen du valgte under «Sett opp arket», ellers fanen som heter ARK_BEDRIFTER.
  * Finnes ingen av dem, stopper systemet i stedet for å gjette.
@@ -52,9 +59,9 @@ function lesBedrifter_() {
   const kol = {};
   const mangler = [];
   Object.keys(KONFIG.KOLONNER).forEach(nokkel => {
-    const navn = KONFIG.KOLONNER[nokkel];
-    if (!navn) return;
-    const i = overskrifter.findIndex(h => h.toLowerCase() === navn.toLowerCase());
+    const navn = kolonnenavn_(nokkel).map(n => n.toLowerCase());
+    if (!navn.length) return;
+    const i = overskrifter.findIndex(h => navn.indexOf(h.toLowerCase()) >= 0);
     if (i >= 0) kol[nokkel] = i; else mangler.push(nokkel);
   });
   if (mangler.length) {
@@ -62,7 +69,7 @@ function lesBedrifter_() {
     const start = overskrifter.filter(h => h !== '').length === 0 ? 0 : sisteKol;
     mangler.forEach((nokkel, n) => { kol[nokkel] = start + n; });
     ark.getRange(1, start + 1, 1, mangler.length)
-      .setValues([mangler.map(n => KONFIG.KOLONNER[n])]).setFontWeight('bold');
+      .setValues([mangler.map(n => kolonnenavn_(n)[0])]).setFontWeight('bold');
     sisteKol = start + mangler.length;
     overskrifter = ark.getRange(1, 1, 1, sisteKol).getValues()[0].map(v => String(v).trim());
   }
@@ -176,6 +183,9 @@ function erLast_(tabell, rad) {
 
 function loggHendelse_(rad) {
   const ark = hentEllerLagArk_(hentRegneark_(), KONFIG.ARK_LOGG, LOGG_KOLONNER);
+  // Siste felt er lenken til tråden. Vis den som «Åpne» i stedet for en lang URL.
+  const url = rad[rad.length - 1];
+  if (/^https?:\/\//.test(String(url))) rad[rad.length - 1] = '=HYPERLINK("' + url + '","Åpne")';
   ark.appendRow(rad);
 }
 
