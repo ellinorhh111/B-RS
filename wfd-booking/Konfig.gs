@@ -71,13 +71,13 @@ Women's Finance Day
   SVAR_TIL_ALLE: true,
 
   // --- Historikk (menyvalget «Importer historikk fra Gmail») ---
-  HISTORIKK_FRA_DATO: '2025/08/01',
-  // Ekstra Gmail-søk for historikken. Tom tekst = bruk NOKKELORD.
-  // Eksempel for å ta med alt du har sendt: 'in:sent'
-  HISTORIKK_SOK: '',
-  // true: AI leser hver gamle tråd og fyller inn status og oppsummering (koster litt per tråd).
-  // false: bare dato, kontaktperson, antall e-poster og emne fylles inn.
-  HISTORIKK_MED_AI: true,
+  HISTORIKK_FRA_DATO: '2026/08/01',
+  // Hvilke e-poster historikken leser: alt som er sendt fra eller til WFD-adressen.
+  HISTORIKK_SOK: '{from:wfd.booking@nhhs.no to:wfd.booking@nhhs.no cc:wfd.booking@nhhs.no}',
+  // true: historikken oppdaterer bare bedrifter som allerede står i Booking (lager ingen nye rader).
+  HISTORIKK_BARE_KJENTE: true,
+  // true: AI leser hver gamle tråd og fyller inn status og oppsummering (krever API-nøkkel).
+  HISTORIKK_MED_AI: false,
 
   // --- Oppfølging ---
   PURR_ETTER_DAGER: 7,          // Når en bedrift ikke har svart på så mange dager, foreslås purring.

@@ -75,13 +75,13 @@ Women's Finance Day
   SVAR_TIL_ALLE: true,
 
   // --- Historikk (menyvalget «Importer historikk fra Gmail») ---
-  HISTORIKK_FRA_DATO: '2025/08/01',
-  // Ekstra Gmail-søk for historikken. Tom tekst = bruk NOKKELORD.
-  // Eksempel for å ta med alt du har sendt: 'in:sent'
-  HISTORIKK_SOK: '',
-  // true: AI leser hver gamle tråd og fyller inn status og oppsummering (koster litt per tråd).
-  // false: bare dato, kontaktperson, antall e-poster og emne fylles inn.
-  HISTORIKK_MED_AI: true,
+  HISTORIKK_FRA_DATO: '2026/08/01',
+  // Hvilke e-poster historikken leser: alt som er sendt fra eller til WFD-adressen.
+  HISTORIKK_SOK: '{from:wfd.booking@nhhs.no to:wfd.booking@nhhs.no cc:wfd.booking@nhhs.no}',
+  // true: historikken oppdaterer bare bedrifter som allerede står i Booking (lager ingen nye rader).
+  HISTORIKK_BARE_KJENTE: true,
+  // true: AI leser hver gamle tråd og fyller inn status og oppsummering (krever API-nøkkel).
+  HISTORIKK_MED_AI: false,
 
   // --- Oppfølging ---
   PURR_ETTER_DAGER: 7,          // Når en bedrift ikke har svart på så mange dager, foreslås purring.
@@ -298,7 +298,8 @@ function finnRad_(tabell, motpart, bedriftsnavn) {
     if (stamme.length >= 3) {
       for (let i = 0; i < tabell.rader.length; i++) {
         const n = normaliserNavn_(celle_(tabell, i, 'bedrift'));
-        if (n && (n === stamme || n.indexOf(stamme) === 0)) return i;
+        // nbim.no → «NBIM», dnb.no → «DNB Carnegie», paretosec.com → «Pareto»
+        if (n && (n === stamme || n.indexOf(stamme) === 0 || (n.length >= 4 && stamme.indexOf(n) === 0))) return i;
       }
     }
   }
@@ -759,6 +760,11 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   }
 
   let rad = finnRad_(tabell, motpart, '');
+  // Historikk uten AI for bare kjente bedrifter: hopp raskt over alt annet.
+  if (rad < 0 && tilstand.historikk && KONFIG.HISTORIKK_BARE_KJENTE && !(KONFIG.HISTORIKK_MED_AI && harAI_())) {
+    lagreTrad_(trader, tradId, motpart.nokkel, siste.getDate(), alle.length);
+    return false;
+  }
   const harEtikett = trad.getLabels().some(l => l.getName() === KONFIG.ETIKETT);
   if (rad < 0 && !harEtikett && !inneholderNokkelord_(alle)) return false;
 
@@ -791,6 +797,10 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   // ---- Finn eller lag rad ----
   if (rad < 0 && analyse && analyse.bedrift) rad = finnRad_(tabell, motpart, analyse.bedrift);
   const ny = rad < 0;
+  if (ny && tilstand.historikk && KONFIG.HISTORIKK_BARE_KJENTE) {
+    lagreTrad_(trader, tradId, motpart.nokkel, siste.getDate(), alle.length);
+    return false;
+  }
   if (ny) {
     rad = nyRad_(tabell);
     settCelle_(tabell, rad, 'bedrift', (analyse && analyse.bedrift) || (motpart.privat ? motpart.navn || motpart.epost : navnFraDomene_(motpart.domene)));
@@ -978,9 +988,12 @@ function importerHistorikk() {
   const ui = SpreadsheetApp.getUi();
   const svar = ui.alert('Importer historikk',
     'Går gjennom e-post fra ' + KONFIG.HISTORIKK_FRA_DATO + ' med søket:\n\n' + historikkSok_() +
-    '\n\n' + (KONFIG.HISTORIKK_MED_AI && harAI_()
+    '\n\n' + (KONFIG.HISTORIKK_BARE_KJENTE
+      ? 'Bare bedrifter som allerede står i Booking oppdateres. Ingen nye rader legges til. '
+      : 'Bedrifter som ikke står i Booking legges til nederst. ') +
+    (KONFIG.HISTORIKK_MED_AI && harAI_()
       ? 'AI leser hver tråd (koster noen øre per tråd). '
-      : 'Uten AI: bare dato, kontakt og antall e-poster fylles inn. ') +
+      : 'Sist kontakt, hvem som skrev sist, status og dine kolonner fylles ut. ') +
     'Det kan ta en stund. Du får en e-post når det er ferdig. Fortsette?', ui.ButtonSet.YES_NO);
   if (svar !== ui.Button.YES) return;
   PropertiesService.getScriptProperties().setProperty('HISTORIKK_POS', '0');
@@ -1672,7 +1685,7 @@ function lagOversikt_(ss, tabell) {
   ark.setRowHeight(hode, 26);
 
   ark.getRange(hode + 1, 2).setFormula(
-    `=ARRAYFORMULA(IFERROR(SORT(FILTER({${omr('sistKontakt')},${omr('bedrift')}&"  —  "&${omr('oppsummering')}},${omr('trengerSvar')}="Ja"),1,FALSE),"Ingen akkurat nå 🎉"))`);
+    `=ARRAYFORMULA(IFERROR(SORT(FILTER({${omr('sistKontakt')},${omr('bedrift')}&"  —  "&IF(LEN(${omr('oppsummering')})>90,LEFT(${omr('oppsummering')},90)&"…",${omr('oppsummering')})},${omr('trengerSvar')}="Ja"),1,FALSE),"Ingen akkurat nå 🎉"))`);
   ark.getRange(hode + 1, 8).setFormula(
     `=ARRAYFORMULA(IFERROR(SORT(FILTER({${omr('sistKontakt')},${omr('bedrift')}&"  ·  "&${omr('status')}},${omr('retning')}="Oss",${omr('sistKontakt')}<>"",${omr('sistKontakt')}<=TODAY()-${purrDager},REGEXMATCH(${omr('status')},"^(${purrStatus.join('|')})$")),1,TRUE),"Ingen akkurat nå 🎉"))`);
   [2, 8].forEach(c => {

@@ -172,6 +172,11 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   }
 
   let rad = finnRad_(tabell, motpart, '');
+  // Historikk uten AI for bare kjente bedrifter: hopp raskt over alt annet.
+  if (rad < 0 && tilstand.historikk && KONFIG.HISTORIKK_BARE_KJENTE && !(KONFIG.HISTORIKK_MED_AI && harAI_())) {
+    lagreTrad_(trader, tradId, motpart.nokkel, siste.getDate(), alle.length);
+    return false;
+  }
   const harEtikett = trad.getLabels().some(l => l.getName() === KONFIG.ETIKETT);
   if (rad < 0 && !harEtikett && !inneholderNokkelord_(alle)) return false;
 
@@ -204,6 +209,10 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   // ---- Finn eller lag rad ----
   if (rad < 0 && analyse && analyse.bedrift) rad = finnRad_(tabell, motpart, analyse.bedrift);
   const ny = rad < 0;
+  if (ny && tilstand.historikk && KONFIG.HISTORIKK_BARE_KJENTE) {
+    lagreTrad_(trader, tradId, motpart.nokkel, siste.getDate(), alle.length);
+    return false;
+  }
   if (ny) {
     rad = nyRad_(tabell);
     settCelle_(tabell, rad, 'bedrift', (analyse && analyse.bedrift) || (motpart.privat ? motpart.navn || motpart.epost : navnFraDomene_(motpart.domene)));

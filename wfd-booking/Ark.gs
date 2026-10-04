@@ -140,7 +140,8 @@ function finnRad_(tabell, motpart, bedriftsnavn) {
     if (stamme.length >= 3) {
       for (let i = 0; i < tabell.rader.length; i++) {
         const n = normaliserNavn_(celle_(tabell, i, 'bedrift'));
-        if (n && (n === stamme || n.indexOf(stamme) === 0)) return i;
+        // nbim.no → «NBIM», dnb.no → «DNB Carnegie», paretosec.com → «Pareto»
+        if (n && (n === stamme || n.indexOf(stamme) === 0 || (n.length >= 4 && stamme.indexOf(n) === 0))) return i;
       }
     }
   }

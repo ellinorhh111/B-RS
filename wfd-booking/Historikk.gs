@@ -14,9 +14,12 @@ function importerHistorikk() {
   const ui = SpreadsheetApp.getUi();
   const svar = ui.alert('Importer historikk',
     'Går gjennom e-post fra ' + KONFIG.HISTORIKK_FRA_DATO + ' med søket:\n\n' + historikkSok_() +
-    '\n\n' + (KONFIG.HISTORIKK_MED_AI && harAI_()
+    '\n\n' + (KONFIG.HISTORIKK_BARE_KJENTE
+      ? 'Bare bedrifter som allerede står i Booking oppdateres. Ingen nye rader legges til. '
+      : 'Bedrifter som ikke står i Booking legges til nederst. ') +
+    (KONFIG.HISTORIKK_MED_AI && harAI_()
       ? 'AI leser hver tråd (koster noen øre per tråd). '
-      : 'Uten AI: bare dato, kontakt og antall e-poster fylles inn. ') +
+      : 'Sist kontakt, hvem som skrev sist, status og dine kolonner fylles ut. ') +
     'Det kan ta en stund. Du får en e-post når det er ferdig. Fortsette?', ui.ButtonSet.YES_NO);
   if (svar !== ui.Button.YES) return;
   PropertiesService.getScriptProperties().setProperty('HISTORIKK_POS', '0');
