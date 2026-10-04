@@ -249,6 +249,8 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
       const pakke = pakkeFraEpost_(fraDem);
       if (pakke) settCelle_(tabell, rad, 'pakke', pakke);
     }
+    const nyeFraDemTekst = nye.filter(m => !erFraOss_(m)).map(m => rensTekst_(m.getPlainBody())).join('\n');
+    leggTilOnsker_(tabell, rad, onskerFraEpost_(nyeFraDemTekst));
     if (analyse) {
       const kontaktperson = analyse.kontaktperson || (!erFraOss_(siste) ? motpart.navn : '');
       if (kontaktperson && !celle_(tabell, rad, 'kontaktperson')) settCelle_(tabell, rad, 'kontaktperson', kontaktperson);
@@ -386,4 +388,48 @@ function slettVarUtkast_(tradId) {
     // Utkastet er allerede sendt eller slettet.
   }
   PropertiesService.getScriptProperties().deleteProperty('UTKAST_' + tradId);
+}
+
+/**
+ * Leser tidligere e-poster fra bedrifter som er bekreftet eller interessert, og fyller «Spesielle ønsker»
+ * og tom «Pakke 2027». Brukes ved oppsett, så ønsker fra før systemet ble satt opp også kommer med.
+ */
+function hentOnskerFraGmail_(tabell, maksMs) {
+  if (tabell.kol.onsker === undefined && tabell.kol.pakke === undefined) return 0;
+  const start = Date.now();
+  const sp = KONFIG.SPEIL || {};
+  const medKol = tabell.alle[sp.med];
+  let oppdatert = 0;
+  for (let i = 0; i < tabell.rader.length; i++) {
+    if (Date.now() - start > maksMs) break;
+    const status = String(celle_(tabell, i, 'status'));
+    const med = medKol !== undefined ? String(tabell.rader[i][medKol]) : '';
+    if (!(med === (sp.ja || 'Ja') || ['Bekreftet', 'Tilbud sendt', 'Interessert'].indexOf(status) >= 0)) continue;
+
+    const eposter = (String(celle_(tabell, i, 'epost')).match(/[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [])
+      .map(e => e.toLowerCase()).filter(e => !erEgenAdresse_(e));
+    const domene = String(celle_(tabell, i, 'domene')).trim();
+    const avsendere = eposter.concat(domene ? ['@' + domene] : []);
+    if (!avsendere.length) continue;
+
+    const sok = '{' + avsendere.map(a => 'from:' + a).join(' ') + '} after:' + KONFIG.HISTORIKK_FRA_DATO;
+    const tekst = [];
+    const fraBedriften = m => {
+      const fra = (tolkAdresser_(m.getFrom())[0] || {}).epost || '';
+      return eposter.indexOf(fra) >= 0 || (domene && (fra.endsWith('@' + domene) || fra.endsWith('.' + domene)));
+    };
+    GmailApp.search(sok, 0, 10).forEach(t => t.getMessages().forEach(m => {
+      if (!m.isDraft() && !erFraOss_(m) && fraBedriften(m)) tekst.push(rensTekst_(m.getPlainBody()));
+    }));
+    if (!tekst.length) continue;
+    const samlet = tekst.join('\n');
+    const for_ = String(celle_(tabell, i, 'onsker')) + String(celle_(tabell, i, 'pakke'));
+    if (tabell.kol.pakke !== undefined && !celle_(tabell, i, 'pakke')) {
+      const p = pakkeFraEpost_(samlet);
+      if (p) settCelle_(tabell, i, 'pakke', p);
+    }
+    leggTilOnsker_(tabell, i, onskerFraEpost_(samlet));
+    if (String(celle_(tabell, i, 'onsker')) + String(celle_(tabell, i, 'pakke')) !== for_) oppdatert++;
+  }
+  return oppdatert;
 }

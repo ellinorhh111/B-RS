@@ -31,7 +31,7 @@ installeres i kontoen der WFD-mailene kommer inn (NHH-kontoen din, s242961).
 3. **Enklest:** slett alt i `Kode.gs` og lim inn hele `WFD-alt-i-en.gs`.
    (Alternativt: slett innholdet i `Kode.gs` og lag én skriptfil per fil i denne mappen (trykk **+** ved «Filer» → **Skript**),
    gi den samme navn og lim inn innholdet:
-   `Konfig`, `Ark`, `AI`, `Innboks`, `Historikk`, `Oppfolging`, `Oppsett`, `Utseende`.)
+   `Konfig`, `Ark`, `AI`, `Innboks`, `Historikk`, `Oppfolging`, `Oppsett`, `Utseende`, `Bedriftsliste`.)
 4. Under **Prosjektinnstillinger** (tannhjulet): huk av for «Vis manifestfilen appsscript.json i redigeringsprogrammet»,
    og lim inn innholdet fra `appsscript.json`. Det setter riktig tidssone (Europe/Oslo).
 5. Lagre (Ctrl/Cmd + S).
@@ -88,6 +88,21 @@ Fanen **Mot fjoråret** sammenligner bekreftede Premium partnere og Partnere i �
   («Premium partner!», «Partner») og fra bedriftens e-post («vi deltar gjerne som Premium Partner»), men bare når
   den står tom. Du kan alltid endre den selv.
 * Listene viser fjorårets partnere som ikke har bekreftet ennå, og nye partnere i år.
+
+## Bedriftsoversikt
+
+Fanen **Bedriftsoversikt** viser hvem som er med (bekreftet øverst, så interessert / tilbud sendt), pakke,
+**spesielle ønsker**, notatene dine og kontakt. «Spesielle ønsker» er en kolonne i Booking som fylles med setninger
+fra bedriftens egne e-poster der de nevner workshop, dato, stand, panel o.l. Nye ønsker legges til, ingenting
+slettes, og du kan redigere fritt.
+
+## Bedriftsliste fra Gmail
+
+**WFD → Oppdater Bedriftsliste fra Gmail** søker etter hver bedrift i e-post til/fra WFD-adressen og fyller
+*Kontaktet høst 2026*, *Svar fra bedrift*, *Kontaktet tidligere*, *E-post (fra Gmail)* og *Siste relevante e-post*
+(lenke). En tråd teller bare når motpartens domene ligner navnet, når e-posten inviterer bedriften ved navn, eller
+når navnet står i emnet – så bedrifter som bare er nevnt i andres e-poster ikke gir feil treff. Kategorirader i fet
+skrift hoppes over.
 
 ## Slik bruker du det i hverdagen
 

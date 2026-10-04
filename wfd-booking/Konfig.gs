@@ -57,6 +57,8 @@ Women's Finance Day
   // Dine egne adresser (i tillegg til kontoen skriptet kjører på og Gmail-aliasene dine).
   // E-post fra disse regnes som «sendt av oss».
   EGNE_ADRESSER: ['wfd.booking@nhhs.no'],
+  // Adressen all WFD-booking går gjennom. Brukes når Bedriftsliste oppdateres fra Gmail.
+  WFD_ADRESSE: 'wfd.booking@nhhs.no',
   // Domener som er «oss» (f.eks. foreningens domene). E-post til/fra disse alene ignoreres.
   EGNE_DOMENER: ['nhh.no', 'student.nhh.no', 'nhhs.no'],
 
@@ -101,6 +103,7 @@ Women's Finance Day
     notater: 'Veien videre',      // systemet skriver aldri her, men AI-en leser det
     status: 'Status',             // påkrevd
     pakke: 'Pakke 2027',          // Premium partner / Partner – fylles fra e-post og notater, kan endres
+    onsker: 'Spesielle ønsker',   // setninger om ønsker fra bedriftens e-post (workshop, dato, stand …), kan endres
     trengerSvar: 'Trenger svar',  // påkrevd
     sistKontakt: 'Sist kontakt',  // påkrevd
     retning: 'Siste e-post fra',  // påkrevd
@@ -151,6 +154,7 @@ Women's Finance Day
   ],
   ARK_OVERSIKT: 'Oversikt',
   ARK_FJOR: 'Mot fjoråret',
+  ARK_BEDRIFTSOVERSIKT: 'Bedriftsoversikt',
 
   // Pakkene i år. Fjorårets pakke leses fra «(Premium)» / «(Partner)» i bedriftsnavnet.
   PAKKER: { premium: 'Premium partner', partner: 'Partner' },

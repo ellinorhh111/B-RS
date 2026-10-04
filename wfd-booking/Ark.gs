@@ -298,3 +298,26 @@ function fyllPakkeFraNotater_(tabell) {
     if (p) settCelle_(tabell, i, 'pakke', p);
   });
 }
+
+/**
+ * Plukker ut setninger der bedriften sier hva den ønsker (workshop, dato, stand, panel osv.).
+ * Hopper over hilsener, signaturer og lenker. Maks tre setninger.
+ */
+function onskerFraEpost_(tekst) {
+  const ord = /(ønsk|workshop|\bstand\b|standplass|panel|foredrag|nettverks|presentasjon|internship|graduate|would like|wish|prefer|request|interested in)/i;
+  const stoy = /(@|https?:|www\.|\+\d{2}|tlf|mobil|mvh|med vennlig|best regards|vänliga|hilsen|takk for invitasjon|thank you for the invitation)/i;
+  const setninger = String(tekst || '')
+    .split(/\n+|(?<=[.!?])\s+(?=[A-ZÆØÅ])/)
+    .map(x => x.replace(/\s+/g, ' ').trim())
+    .filter(x => x.length >= 15 && x.length <= 300 && ord.test(x) && !stoy.test(x));
+  return setninger.slice(0, 3);
+}
+
+/** Legger nye ønsker til i «Spesielle ønsker» uten å fjerne det som står der fra før. */
+function leggTilOnsker_(tabell, rad, setninger) {
+  if (tabell.kol.onsker === undefined || !setninger.length) return;
+  const naa = String(celle_(tabell, rad, 'onsker')).trim();
+  const nye = setninger.filter(x => naa.toLowerCase().indexOf(x.toLowerCase()) < 0);
+  if (!nye.length) return;
+  settCelle_(tabell, rad, 'onsker', (naa ? naa + ' | ' : '') + nye.join(' '));
+}

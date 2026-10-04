@@ -12,6 +12,7 @@ function onOpen() {
     .addItem('Lag purreutkast', 'lagPurreutkast')
     .addItem('Send oppsummering nå', 'dagligOppsummering')
     .addSeparator()
+    .addItem('Oppdater Bedriftsliste fra Gmail', 'oppdaterBedriftsliste')
     .addItem('Gjør arbeidsboken ryddig og pen', 'ryddArbeidsbok')
     .addItem('Stopp all automatikk', 'stoppAutomatikk')
     .addItem('Rydd opp: fjern systemets kolonner fra denne fanen', 'ryddFane')
@@ -26,7 +27,7 @@ function settOpp() {
   const tidligere = egenskaper.getProperty('BEDRIFTSARK');
   if (!(tidligere && ss.getSheetByName(tidligere))) {
     const aktiv = ss.getActiveSheet().getName();
-    const interne = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_TRADER];
+    const interne = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT, KONFIG.ARK_TRADER];
     if (interne.indexOf(aktiv) >= 0) {
       ui.alert('Åpne fanen med booking-tabellen først, og velg menyvalget på nytt.');
       return;
@@ -56,6 +57,11 @@ function settOpp() {
       .requireValueInList([KONFIG.PAKKER.premium, KONFIG.PAKKER.partner], true).setAllowInvalid(true).build());
     fyllPakkeFraNotater_(tabell);
   }
+  try {
+    hentOnskerFraGmail_(tabell, 90 * 1000);
+  } catch (e) {
+    console.warn('Ønsker fra Gmail: ' + e.message);
+  }
   kolonne('trengerSvar').setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(['Ja', 'Nei'], true).setAllowInvalid(true).build());
   ['sistKontakt', 'forsteKontakt', 'oppfolging', 'utkast'].filter(har).forEach(n => kolonne(n).setNumberFormat('dd.mm.yyyy'));
@@ -74,11 +80,7 @@ function settOpp() {
   // Logg, tråder og oversikt
   hentEllerLagArk_(ss, KONFIG.ARK_LOGG, LOGG_KOLONNER);
   hentEllerLagArk_(ss, KONFIG.ARK_TRADER, TRAD_KOLONNER).hideSheet();
-  stilBooking_(tabell);
-  stilLogg_(ss);
-  lagOversikt_(ss, tabell);
-  lagFjorFane_(ss, tabell);
-  sorterFaner_(ss, tabell);
+  stilAlleFaner_(ss, tabell);
   ss.setActiveSheet(tabell.ark);
 
   // Gmail-etiketter
@@ -116,7 +118,7 @@ function sjekkInnboksFraMeny() {
 }
 
 function stoppAutomatikk(stille) {
-  ['sjekkInnboks', 'dagligOppsummering', 'fortsettHistorikk'].forEach(slettTriggere_);
+  ['sjekkInnboks', 'dagligOppsummering', 'fortsettHistorikk', 'fortsettBedriftsliste'].forEach(slettTriggere_);
   PropertiesService.getScriptProperties().deleteProperty('HISTORIKK_POS');
   if (stille !== true) SpreadsheetApp.getUi().alert('All automatikk er stoppet. Velg «Sett opp arket og automatikk» for å starte igjen.');
 }
@@ -160,14 +162,14 @@ function ryddFane() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ui = SpreadsheetApp.getUi();
   const ark = ss.getActiveSheet();
-  if ([KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_TRADER].indexOf(ark.getName()) >= 0) {
+  if ([KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT, KONFIG.ARK_TRADER].indexOf(ark.getName()) >= 0) {
     ui.alert('Du står i fanen «' + ark.getName() + '». Klikk på fanen som skal ryddes (f.eks. Sheet1), og velg menyvalget på nytt.');
     return;
   }
   const sisteKol = Math.max(ark.getLastColumn(), 1);
   const overskrifter = ark.getRange(1, 1, 1, sisteKol).getValues()[0].map(v => String(v).trim());
 
-  const systemNokler = ['status', 'pakke', 'trengerSvar', 'nesteSteg', 'oppfolging', 'sistKontakt', 'retning', 'oppsummering',
+  const systemNokler = ['status', 'pakke', 'onsker', 'trengerSvar', 'nesteSteg', 'oppfolging', 'sistKontakt', 'retning', 'oppsummering',
     'kontaktperson', 'telefon', 'interesse', 'domene', 'forsteKontakt', 'antall', 'trad', 'tradId', 'utkast', 'las'];
   const systemNavn = [].concat.apply([], systemNokler.map(kolonnenavn_));
   const kanVaereDine = [].concat.apply([], ['bedrift', 'epost', 'notater'].map(kolonnenavn_));
