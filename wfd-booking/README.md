@@ -78,6 +78,17 @@ gir «Column 1/2» ordentlige navn (Bedrift/Kontakt), farger systemkolonnene og 
 kolonner og gjør Oversikt om til et dashbord med nøkkeltall, statusfordeling og listene «Trenger svar fra deg» og
 «Bør purres». Den viser hva som blir gjort før noe endres, og spør for seg før tomme faner slettes.
 
+## Mot fjoråret
+
+Fanen **Mot fjoråret** sammenligner bekreftede Premium partnere og Partnere i år med i fjor:
+
+* **I fjor:** telles fra «(Premium)» / «(Partner)» i bedriftsnavnet for rader med *Med i fjor? = Ja*. Cellene er gule
+  og kan overskrives med riktig tall.
+* **I år:** rader der *Pakke 2027* er satt og *Med = Ja*. *Pakke 2027* fylles automatisk fra notatene dine
+  («Premium partner!», «Partner») og fra bedriftens e-post («vi deltar gjerne som Premium Partner»), men bare når
+  den står tom. Du kan alltid endre den selv.
+* Listene viser fjorårets partnere som ikke har bekreftet ennå, og nye partnere i år.
+
 ## Slik bruker du det i hverdagen
 
 * **På mobilen:** Åpne Gmail og etiketten **WFD/Svar klart**. Hver tråd der har et ferdig utkast. Les gjennom,

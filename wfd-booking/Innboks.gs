@@ -244,6 +244,11 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   if (!last) {
     settCelle_(tabell, rad, 'status', statusEtter);
     speilStatus_(tabell, rad, statusEtter);
+    if (tabell.kol.pakke !== undefined && !celle_(tabell, rad, 'pakke')) {
+      const fraDem = alle.filter(m => !erFraOss_(m)).map(m => rensTekst_(m.getPlainBody())).join('\n');
+      const pakke = pakkeFraEpost_(fraDem);
+      if (pakke) settCelle_(tabell, rad, 'pakke', pakke);
+    }
     if (analyse) {
       const kontaktperson = analyse.kontaktperson || (!erFraOss_(siste) ? motpart.navn : '');
       if (kontaktperson && !celle_(tabell, rad, 'kontaktperson')) settCelle_(tabell, rad, 'kontaktperson', kontaktperson);

@@ -269,3 +269,32 @@ function statusFraEgneKolonner_(tabell, i) {
   if (verdi(sp.invitasjonSendt) === ja) return 'Kontaktet';
   return KONFIG.STATUSER[0];
 }
+
+/**
+ * Pakke ut fra det bedriften selv skriver («vi deltar gjerne som Premium Partner», «Vi blir gjerne med som partner»).
+ * Bevisst strengt: bare tydelige formuleringer teller. Returnerer '' hvis usikkert.
+ */
+function pakkeFraEpost_(tekst) {
+  const t = String(tekst || '');
+  if (/premium[\s-]*partner/i.test(t)) return KONFIG.PAKKER.premium;
+  if (/\b(som|as an?|as)\s+(en\s+)?partner\b/i.test(t)) return KONFIG.PAKKER.partner;
+  return '';
+}
+
+/** Pakke ut fra notatene dine («Premium partner!», «Partner», «Premium. ønsker workshop»). */
+function pakkeFraNotat_(tekst) {
+  const t = String(tekst || '');
+  if (/premium/i.test(t)) return KONFIG.PAKKER.premium;
+  if (/\bpartner\b/i.test(t)) return KONFIG.PAKKER.partner;
+  return '';
+}
+
+/** Fyller tomme «Pakke 2027» fra Veien videre. Overskriver aldri. */
+function fyllPakkeFraNotater_(tabell) {
+  if (tabell.kol.pakke === undefined || tabell.kol.notater === undefined) return;
+  tabell.rader.forEach((_, i) => {
+    if (celle_(tabell, i, 'pakke')) return;
+    const p = pakkeFraNotat_(celle_(tabell, i, 'notater'));
+    if (p) settCelle_(tabell, i, 'pakke', p);
+  });
+}

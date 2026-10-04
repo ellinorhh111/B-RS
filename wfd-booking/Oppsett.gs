@@ -22,7 +22,7 @@ function settOpp() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ui = SpreadsheetApp.getUi();
   const aktiv = ss.getActiveSheet().getName();
-  const interne = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_TRADER];
+  const interne = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_TRADER];
   if (interne.indexOf(aktiv) >= 0) {
     ui.alert('Åpne fanen med bedriftslisten først, og velg menyvalget på nytt.');
     return;
@@ -36,7 +36,7 @@ function settOpp() {
   egenskaper.setProperty('REGNEARK_ID', ss.getId());
   egenskaper.setProperty('BEDRIFTSARK', aktiv);
 
-  const tabell = lesBedrifter_(); // legger til kolonner som mangler
+  const tabell = plasserPakkeKolonne_(lesBedrifter_()); // legger til kolonner som mangler
   const ark = tabell.ark;
   const maksRad = Math.max(ark.getMaxRows(), 500);
   if (ark.getMaxRows() < maksRad) ark.insertRowsAfter(ark.getMaxRows(), maksRad - ark.getMaxRows());
@@ -46,6 +46,11 @@ function settOpp() {
   const alleStatuser = KONFIG.STATUSER.concat([KONFIG.STATUS_NEI]);
   kolonne('status').setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(alleStatuser, true).setAllowInvalid(true).build());
+  if (har('pakke')) {
+    kolonne('pakke').setDataValidation(SpreadsheetApp.newDataValidation()
+      .requireValueInList([KONFIG.PAKKER.premium, KONFIG.PAKKER.partner], true).setAllowInvalid(true).build());
+    fyllPakkeFraNotater_(tabell);
+  }
   kolonne('trengerSvar').setDataValidation(SpreadsheetApp.newDataValidation()
     .requireValueInList(['Ja', 'Nei'], true).setAllowInvalid(true).build());
   ['sistKontakt', 'forsteKontakt', 'oppfolging', 'utkast'].filter(har).forEach(n => kolonne(n).setNumberFormat('dd.mm.yyyy'));
@@ -67,6 +72,9 @@ function settOpp() {
   stilBooking_(tabell);
   stilLogg_(ss);
   lagOversikt_(ss, tabell);
+  lagFjorFane_(ss, tabell);
+  sorterFaner_(ss, tabell);
+  ss.setActiveSheet(tabell.ark);
 
   // Gmail-etiketter
   hentEtikett_(KONFIG.ETIKETT);
@@ -147,14 +155,14 @@ function ryddFane() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ui = SpreadsheetApp.getUi();
   const ark = ss.getActiveSheet();
-  if ([KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_TRADER].indexOf(ark.getName()) >= 0) {
+  if ([KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_TRADER].indexOf(ark.getName()) >= 0) {
     ui.alert('Du står i fanen «' + ark.getName() + '». Klikk på fanen som skal ryddes (f.eks. Sheet1), og velg menyvalget på nytt.');
     return;
   }
   const sisteKol = Math.max(ark.getLastColumn(), 1);
   const overskrifter = ark.getRange(1, 1, 1, sisteKol).getValues()[0].map(v => String(v).trim());
 
-  const systemNokler = ['status', 'trengerSvar', 'nesteSteg', 'oppfolging', 'sistKontakt', 'retning', 'oppsummering',
+  const systemNokler = ['status', 'pakke', 'trengerSvar', 'nesteSteg', 'oppfolging', 'sistKontakt', 'retning', 'oppsummering',
     'kontaktperson', 'telefon', 'interesse', 'domene', 'forsteKontakt', 'antall', 'trad', 'tradId', 'utkast', 'las'];
   const systemNavn = [].concat.apply([], systemNokler.map(kolonnenavn_));
   const kanVaereDine = [].concat.apply([], ['bedrift', 'epost', 'notater'].map(kolonnenavn_));

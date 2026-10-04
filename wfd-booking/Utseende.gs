@@ -62,8 +62,8 @@ function ryddArbeidsbok() {
       (f.overskrifter ? ' (overskrifter: ' + Object.keys(f.overskrifter).map(k => k + ' → ' + f.overskrifter[k]).join(', ') + ')' : ''));
   });
   plan.push('Systemkolonnene i booking-tabellen får farger, bredder og statusfarger. Domene og Tråd-ID skjules');
-  plan.push('Oversikt blir et dashbord, og Logg får en ryddig tabell');
-  plan.push('Fanene sorteres: Oversikt, Booking, Bedriftsliste, Logg');
+  plan.push('Oversikt blir et dashbord, «' + KONFIG.ARK_FJOR + '» sammenligner med fjoråret, og Logg får en ryddig tabell');
+  plan.push('Fanene sorteres: Oversikt, ' + KONFIG.ARK_FJOR + ', Booking, Bedriftsliste, Logg');
 
   const svar = ui.alert('Gjør arbeidsboken ryddig',
     'Dette blir gjort:\n\n• ' + plan.join('\n• ') + '\n\nInnholdet i tabellene dine endres ikke. Fortsette?', ui.ButtonSet.YES_NO);
@@ -97,16 +97,17 @@ function ryddArbeidsbok() {
   });
 
   // 3. Utseende
-  tabell = lesBedrifter_();
+  tabell = plasserPakkeKolonne_(lesBedrifter_());
   stilBooking_(tabell);
   stilLogg_(ss);
   lagOversikt_(ss, tabell);
+  lagFjorFane_(ss, tabell);
   sorterFaner_(ss, tabell);
 
   // 4. Tomme faner: spør for seg, siden sletting ikke kan angres med Ctrl+Z.
   const tomme = ss.getSheets().filter(a => {
     const n = a.getName();
-    if (n === tabell.ark.getName() || [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_TRADER].indexOf(n) >= 0) return false;
+    if (n === tabell.ark.getName() || [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_TRADER].indexOf(n) >= 0) return false;
     if ((KONFIG.ANDRE_FANER || []).some(f => f.til === n)) return false;
     return a.getLastRow() <= 1;
   });
@@ -124,6 +125,7 @@ function ryddArbeidsbok() {
 function sorterFaner_(ss, tabell) {
   const rekkefolge = [
     [KONFIG.ARK_OVERSIKT, FANEFARGE.oversikt],
+    [KONFIG.ARK_FJOR, FANEFARGE.oversikt],
     [tabell.ark.getName(), FANEFARGE.booking],
   ].concat((KONFIG.ANDRE_FANER || []).map(f => [f.til, FANEFARGE.liste]))
     .concat([[KONFIG.ARK_LOGG, FANEFARGE.logg]]);
@@ -142,7 +144,7 @@ function sorterFaner_(ss, tabell) {
 // ---------------------------------------------------------------------------
 
 function systemKolonner_(tabell) {
-  const egne = ['status', 'trengerSvar', 'nesteSteg', 'oppfolging', 'sistKontakt', 'retning', 'oppsummering',
+  const egne = ['status', 'pakke', 'trengerSvar', 'nesteSteg', 'oppfolging', 'sistKontakt', 'retning', 'oppsummering',
     'kontaktperson', 'telefon', 'interesse', 'domene', 'forsteKontakt', 'antall', 'trad', 'tradId', 'utkast', 'las'];
   return egne.filter(n => tabell.kol[n] !== undefined);
 }
@@ -154,7 +156,7 @@ function stilBooking_(tabell) {
 
   // Overskrifter på systemkolonnene
   const bredder = {
-    status: 120, trengerSvar: 105, nesteSteg: 220, oppfolging: 110, sistKontakt: 105, retning: 120,
+    status: 120, pakke: 130, trengerSvar: 105, nesteSteg: 220, oppfolging: 110, sistKontakt: 105, retning: 120,
     oppsummering: 320, kontaktperson: 150, telefon: 110, interesse: 140, forsteKontakt: 110, antall: 90,
     trad: 95, utkast: 105, las: 55, domene: 120, tradId: 120,
   };
@@ -331,4 +333,120 @@ function lagOversikt_(ss, tabell) {
     ark.getRange(hode + 1, c, 200, 1).setNumberFormat('d. mmm').setHorizontalAlignment('left').setFontColor(FARGE.dempet);
     ark.getRange(hode + 1, c + 1, 200, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.OVERFLOW);
   });
+}
+
+// ---------------------------------------------------------------------------
+// «Mot fjoråret»: Premium partner og Partner i år mot i fjor
+// ---------------------------------------------------------------------------
+
+/** Flytter «Pakke 2027» rett til høyre for Status hvis den ligger et annet sted. Returnerer tabellen på nytt. */
+function plasserPakkeKolonne_(tabell) {
+  if (tabell.kol.pakke === undefined || tabell.kol.status === undefined) return tabell;
+  const fra = tabell.kol.pakke + 1;
+  const etter = tabell.kol.status + 1;
+  if (fra === etter + 1) return tabell;
+  tabell.ark.moveColumns(tabell.ark.getRange(1, fra, 1, 1), etter + 1 > fra ? etter + 1 : etter + 1);
+  return lesBedrifter_();
+}
+
+function lagFjorFane_(ss, tabell) {
+  const ark = hentEllerLagArk_(ss, KONFIG.ARK_FJOR, null);
+  ark.clear();
+  ark.clearConditionalFormatRules();
+  ark.getRange(1, 1, ark.getMaxRows(), ark.getMaxColumns()).breakApart();
+  ark.setHiddenGridlines(true);
+  if (ark.getMaxColumns() < 14) ark.insertColumnsAfter(ark.getMaxColumns(), 14 - ark.getMaxColumns());
+
+  const B = "'" + tabell.ark.getName() + "'!";
+  const sp = KONFIG.SPEIL || {};
+  const egen = navn => tabell.alle[navn] !== undefined ? B + kolonneBokstav_(tabell.alle[navn] + 1) + '2:' + kolonneBokstav_(tabell.alle[navn] + 1) : null;
+  const sys = n => B + kolonneBokstav_(tabell.kol[n] + 1) + '2:' + kolonneBokstav_(tabell.kol[n] + 1);
+  const bedrift = sys('bedrift');
+  const pakke = sys('pakke');
+  const status = sys('status');
+  const med = egen(sp.med);
+  const medIFjor = egen(sp.medIFjor);
+  const ja = sp.ja || 'Ja';
+  // Bekreftet i år: «Med = Ja» hvis kolonnen finnes, ellers status «Bekreftet».
+  const bekreftet = med ? `${med},"${ja}"` : `${status},"Bekreftet"`;
+  const fjorFilter = medIFjor ? `,${medIFjor},"${ja}"` : '';
+
+  ark.setColumnWidth(1, 28);
+  ark.setColumnWidth(2, 190);
+  for (let c = 3; c <= 7; c++) ark.setColumnWidth(c, 110);
+  ark.setColumnWidth(8, 220);
+  for (let c = 9; c <= 13; c++) ark.setColumnWidth(c, 96);
+  ark.getRange(1, 1, 80, 14).setFontColor(FARGE.tekst).setVerticalAlignment('middle');
+
+  ark.setRowHeight(2, 36);
+  ark.getRange('B2').setValue('WFD 2027 mot WFD 2026').setFontSize(20).setFontWeight('bold');
+  ark.getRange('B3').setValue('Bekreftede Premium partnere og Partnere i år, sammenlignet med i fjor. ' +
+    'Tallene for i fjor er hentet fra «(Premium)» og «(Partner)» i bedriftsnavnene. De gule cellene kan du overskrive.')
+    .setFontColor(FARGE.dempet).setFontSize(10);
+
+  // Hovedtabell
+  const hode = 5;
+  ark.getRange(hode, 2, 1, 7).setValues([['', '2026 (i fjor)', '2027 bekreftet', 'Differanse', 'Av fjorårets nivå', 'Ønsker, ikke bekreftet', 'Fremdrift']]);
+  ark.getRange(hode, 2, 1, 7).setBackground(FARGE.indigo).setFontColor(FARGE.hvit).setFontWeight('bold').setHorizontalAlignment('center');
+  ark.setRowHeight(hode, 30);
+
+  const rader = [
+    ['Premium partner', '*(Premium)*', KONFIG.PAKKER.premium, '#EDE9FE', '#5B21B6'],
+    ['Partner', '*(Partner)*', KONFIG.PAKKER.partner, '#E0E7FF', '#3730A3'],
+  ];
+  rader.forEach(([navn, monster, pakkeNavn, bg, fg], i) => {
+    const r = hode + 1 + i;
+    ark.setRowHeight(r, 34);
+    ark.getRange(r, 2).setValue(navn).setFontWeight('bold').setBackground(bg).setFontColor(fg);
+    ark.getRange(r, 3).setFormula(`=COUNTIFS(${bedrift},"${monster}"${fjorFilter})`)
+      .setBackground('#FEF9C3').setNote('Regnet ut fra bedriftsnavnene. Skriv inn riktig tall her hvis det ikke stemmer.');
+    ark.getRange(r, 4).setFormula(`=COUNTIFS(${pakke},"${pakkeNavn}",${bekreftet})`).setFontWeight('bold');
+    ark.getRange(r, 5).setFormula(`=D${r}-C${r}`).setNumberFormat('+0;-0;0');
+    ark.getRange(r, 6).setFormula(`=IFERROR(D${r}/C${r},"–")`).setNumberFormat('0%');
+    ark.getRange(r, 7).setFormula(`=COUNTIFS(${pakke},"${pakkeNavn}")-D${r}`);
+    ark.getRange(r, 8).setFormula(
+      `=SPARKLINE(D${r},{"charttype","bar";"max",MAX(C${r},D${r},1);"color1","${fg}"})`);
+    ark.getRange(r, 3, 1, 5).setFontSize(13).setHorizontalAlignment('center');
+  });
+  const tot = hode + 3;
+  ark.setRowHeight(tot, 34);
+  ark.getRange(tot, 2).setValue('Totalt').setFontWeight('bold');
+  ark.getRange(tot, 3).setFormula(`=C${hode + 1}+C${hode + 2}`);
+  ark.getRange(tot, 4).setFormula(`=D${hode + 1}+D${hode + 2}`);
+  ark.getRange(tot, 5).setFormula(`=D${tot}-C${tot}`).setNumberFormat('+0;-0;0');
+  ark.getRange(tot, 6).setFormula(`=IFERROR(D${tot}/C${tot},"–")`).setNumberFormat('0%');
+  ark.getRange(tot, 7).setFormula(`=G${hode + 1}+G${hode + 2}`);
+  ark.getRange(tot, 8).setFormula(`=SPARKLINE(D${tot},{"charttype","bar";"max",MAX(C${tot},D${tot},1);"color1","${FARGE.indigo}"})`);
+  ark.getRange(tot, 2, 1, 7).setFontWeight('bold').setBorder(true, null, null, null, null, null, FARGE.tekst, SpreadsheetApp.BorderStyle.SOLID);
+  ark.getRange(tot, 3, 1, 5).setFontSize(13).setHorizontalAlignment('center');
+
+  // Grønn/rød differanse
+  const diff = ark.getRange(hode + 1, 5, 3, 1);
+  ark.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenNumberGreaterThan(-0.5).setFontColor('#166534').setRanges([diff]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenNumberLessThan(-0.5).setFontColor('#B91C1C').setRanges([diff]).build(),
+  ]);
+
+  // Lister
+  const liste = tot + 3;
+  ark.getRange(liste, 2).setValue('Fjorårets partnere som ikke har bekreftet ennå').setFontSize(13).setFontWeight('bold');
+  ark.getRange(liste, 8).setValue('Nye i år').setFontSize(13).setFontWeight('bold');
+  ark.getRange(liste + 1, 2, 1, 5).setValues([['Bedrift', 'Status', '', '', '']]);
+  ark.getRange(liste + 1, 8, 1, 3).setValues([['Bedrift', 'Pakke 2027', '']]);
+  [ark.getRange(liste + 1, 2, 1, 5), ark.getRange(liste + 1, 8, 1, 4)].forEach(r =>
+    r.setBackground(FARGE.indigo).setFontColor(FARGE.hvit).setFontWeight('bold'));
+  if (medIFjor) {
+    const ikkeBekreftet = med ? `${med}<>"${ja}"` : `${status}<>"Bekreftet"`;
+    ark.getRange(liste + 2, 2).setFormula(
+      `=IFERROR(SORT(FILTER({${bedrift},${status}},${medIFjor}="${ja}",${ikkeBekreftet},${bedrift}<>""),1,TRUE),"Alle er med 🎉")`);
+    const erBekreftet = med ? `${med}="${ja}"` : `${status}="Bekreftet"`;
+    ark.getRange(liste + 2, 8).setFormula(
+      `=IFERROR(SORT(FILTER({${bedrift},${pakke}},${medIFjor}<>"${ja}",${erBekreftet}),1,TRUE),"Ingen ennå")`);
+  } else {
+    ark.getRange(liste + 2, 2).setValue('Fant ingen kolonne «' + (sp.medIFjor || 'Med i fjor?') + '» i booking-tabellen.');
+  }
+  const statusOmr = ark.getRange(liste + 2, 3, 200, 1);
+  ark.setConditionalFormatRules(ark.getConditionalFormatRules().concat(Object.keys(STATUSFARGE).map(st =>
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(st).setBackground(STATUSFARGE[st][0])
+      .setFontColor(STATUSFARGE[st][1]).setRanges([statusOmr]).build())));
 }

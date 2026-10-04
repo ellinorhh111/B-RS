@@ -100,6 +100,7 @@ Women's Finance Day
     epost: ['Kontakt', 'Column 2'],     // kontaktperson og e-post kan stå blandet her
     notater: 'Veien videre',      // systemet skriver aldri her, men AI-en leser det
     status: 'Status',             // påkrevd
+    pakke: 'Pakke 2027',          // Premium partner / Partner – fylles fra e-post og notater, kan endres
     trengerSvar: 'Trenger svar',  // påkrevd
     sistKontakt: 'Sist kontakt',  // påkrevd
     retning: 'Siste e-post fra',  // påkrevd
@@ -129,6 +130,7 @@ Women's Finance Day
     invitasjonSendt: 'Invitasjon sendt',
     respons: 'Respons',
     med: 'Med',
+    medIFjor: 'Med i fjor?',
     ja: 'Ja',
     nei: 'Nei',
     venter: 'venter',
@@ -148,5 +150,9 @@ Women's Finance Day
     { fra: 'Sheet1', til: 'Bedriftsliste', overskrifter: { 'Column 1': 'Bedrift', 'Column 2': 'Beskrivelse' } },
   ],
   ARK_OVERSIKT: 'Oversikt',
+  ARK_FJOR: 'Mot fjoråret',
+
+  // Pakkene i år. Fjorårets pakke leses fra «(Premium)» / «(Partner)» i bedriftsnavnet.
+  PAKKER: { premium: 'Premium partner', partner: 'Partner' },
   ARK_TRADER: '_Tråder',
 };
