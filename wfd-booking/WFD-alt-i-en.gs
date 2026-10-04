@@ -1224,20 +1224,25 @@ function onOpen() {
 function settOpp() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ui = SpreadsheetApp.getUi();
-  const aktiv = ss.getActiveSheet().getName();
-  const interne = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_TRADER];
-  if (interne.indexOf(aktiv) >= 0) {
-    ui.alert('Åpne fanen med bedriftslisten først, og velg menyvalget på nytt.');
-    return;
-  }
-  const svar = ui.alert('Velg bedriftsliste',
-    'Skal fanen «' + aktiv + '» brukes som bedriftslisten?\n\n' +
-    'Systemet legger til sine kolonner til høyre for listen og leser e-postene inn hit. ' +
-    'Er det feil fane, trykk Nei, åpne riktig fane og prøv igjen.', ui.ButtonSet.YES_NO);
-  if (svar !== ui.Button.YES) return;
   const egenskaper = PropertiesService.getScriptProperties();
+  // Er booking-fanen valgt før, brukes den alltid – uansett hvilken fane som er åpen.
+  const tidligere = egenskaper.getProperty('BEDRIFTSARK');
+  if (!(tidligere && ss.getSheetByName(tidligere))) {
+    const aktiv = ss.getActiveSheet().getName();
+    const interne = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_TRADER];
+    if (interne.indexOf(aktiv) >= 0) {
+      ui.alert('Åpne fanen med booking-tabellen først, og velg menyvalget på nytt.');
+      return;
+    }
+    const svar = ui.alert('Velg booking-fane',
+      'Skal fanen «' + aktiv + '» brukes som booking-tabellen?\n\n' +
+      'Systemet legger til sine kolonner til høyre for tabellen og leser e-postene inn hit. ' +
+      'Valget huskes, så du får bare dette spørsmålet én gang. Er det feil fane, trykk Nei, åpne riktig fane og prøv igjen.',
+      ui.ButtonSet.YES_NO);
+    if (svar !== ui.Button.YES) return;
+    egenskaper.setProperty('BEDRIFTSARK', aktiv);
+  }
   egenskaper.setProperty('REGNEARK_ID', ss.getId());
-  egenskaper.setProperty('BEDRIFTSARK', aktiv);
 
   const tabell = plasserPakkeKolonne_(lesBedrifter_()); // legger til kolonner som mangler
   const ark = tabell.ark;
@@ -1378,7 +1383,7 @@ function ryddFane() {
     if (systemNavn.indexOf(h) >= 0) slett.push(k);
     else if (kanVaereDine.indexOf(h) >= 0 && erTom(k) && k > 1) slett.push(k);
   });
-  const fanerSomSlettes = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT].filter(n => ss.getSheetByName(n) && n !== ark.getName());
+  const fanerSomSlettes = []; // Logg, Oversikt og Mot fjoråret beholdes; de bygges opp på nytt av oppsettet.
 
   if (!slett.length && !fanerSomSlettes.length) {
     ui.alert('Fant ingen kolonner fra systemet i fanen «' + ark.getName() + '».');
@@ -1386,11 +1391,12 @@ function ryddFane() {
   }
   const svar = ui.alert('Rydd opp i «' + ark.getName() + '»',
     'Dette slettes:\n\nKolonner: ' + (slett.length ? slett.map(k => kolonneBokstav_(k + 1) + ' (' + overskrifter[k] + ')').join(', ') : 'ingen') +
-    '\nFaner: ' + (fanerSomSlettes.length ? fanerSomSlettes.join(', ') : 'ingen') +
-    '\n\nAutomatikken stoppes også. Fortsette?', ui.ButtonSet.YES_NO);
+    '\n\nFortsette?', ui.ButtonSet.YES_NO);
   if (svar !== ui.Button.YES) return;
 
-  stoppAutomatikk(true);
+  const egenskaper = PropertiesService.getScriptProperties();
+  const varBooking = egenskaper.getProperty('BEDRIFTSARK') === ark.getName();
+  if (varBooking) stoppAutomatikk(true); // ellers legger innboks-sjekken kolonnene tilbake
   // Fra høyre mot venstre, så kolonnenumrene ikke forskyves.
   slett.sort((a, b) => b - a).forEach(k => ark.deleteColumn(k + 1));
   // Fjern systemets fargeregler som pekte på de slettede kolonnene (hvis Sheets ikke allerede har gjort det).
@@ -1399,11 +1405,12 @@ function ryddFane() {
   } catch (e) {
     console.warn('Fargeregler: ' + e.message);
   }
-  fanerSomSlettes.forEach(n => ss.deleteSheet(ss.getSheetByName(n)));
-  const egenskaper = PropertiesService.getScriptProperties();
-  if (egenskaper.getProperty('BEDRIFTSARK') === ark.getName()) egenskaper.deleteProperty('BEDRIFTSARK');
-
-  ui.alert('Ferdig. Åpne fanen med booking-tabellen og velg WFD → «1. Sett opp arket og automatikk».');
+  if (varBooking) {
+    egenskaper.deleteProperty('BEDRIFTSARK');
+    ui.alert('Ferdig. Åpne fanen med booking-tabellen og velg WFD → «1. Sett opp arket og automatikk».');
+  } else {
+    ui.alert('Ferdig.');
+  }
 }
 
 // ===================== Utseende.gs =====================
@@ -1782,8 +1789,8 @@ function lagFjorFane_(ss, tabell) {
 
   ark.setColumnWidth(1, 28);
   ark.setColumnWidth(2, 190);
-  for (let c = 3; c <= 7; c++) ark.setColumnWidth(c, 110);
-  ark.setColumnWidth(8, 220);
+  for (let c = 3; c <= 7; c++) ark.setColumnWidth(c, 140);
+  ark.setColumnWidth(8, 240);
   for (let c = 9; c <= 13; c++) ark.setColumnWidth(c, 96);
   ark.getRange(1, 1, 80, 14).setFontColor(FARGE.tekst).setVerticalAlignment('middle');
 
@@ -1795,7 +1802,7 @@ function lagFjorFane_(ss, tabell) {
 
   // Hovedtabell
   const hode = 5;
-  ark.getRange(hode, 2, 1, 7).setValues([['', '2026 (i fjor)', '2027 bekreftet', 'Differanse', 'Av fjorårets nivå', 'Ønsker, ikke bekreftet', 'Fremdrift']]);
+  ark.getRange(hode, 2, 1, 7).setValues([['', 'I fjor (2026)', 'Bekreftet 2027', 'Endring', 'Andel av i fjor', 'Ikke bekreftet ennå', 'Fremdrift']]);
   ark.getRange(hode, 2, 1, 7).setBackground(FARGE.indigo).setFontColor(FARGE.hvit).setFontWeight('bold').setHorizontalAlignment('center');
   ark.setRowHeight(hode, 30);
 
@@ -1852,7 +1859,7 @@ function lagFjorFane_(ss, tabell) {
     ark.getRange(liste + 2, 8).setFormula(
       `=IFERROR(SORT(FILTER({${bedrift},${pakke}},${medIFjor}<>"${ja}",${erBekreftet}),1,TRUE),"Ingen ennå")`);
   } else {
-    ark.getRange(liste + 2, 2).setValue('Fant ingen kolonne «' + (sp.medIFjor || 'Med i fjor?') + '» i booking-tabellen.');
+    ark.getRange(liste + 2, 2).setValue('Fant ingen kolonne «' + (sp.medIFjor || 'Med i fjor?') + '» i fanen «' + tabell.ark.getName() + '». Er riktig fane valgt som booking-tabell?');
   }
   const statusOmr = ark.getRange(liste + 2, 3, 200, 1);
   ark.setConditionalFormatRules(ark.getConditionalFormatRules().concat(Object.keys(STATUSFARGE).map(st =>

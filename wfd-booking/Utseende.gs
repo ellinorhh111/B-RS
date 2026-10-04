@@ -373,8 +373,8 @@ function lagFjorFane_(ss, tabell) {
 
   ark.setColumnWidth(1, 28);
   ark.setColumnWidth(2, 190);
-  for (let c = 3; c <= 7; c++) ark.setColumnWidth(c, 110);
-  ark.setColumnWidth(8, 220);
+  for (let c = 3; c <= 7; c++) ark.setColumnWidth(c, 140);
+  ark.setColumnWidth(8, 240);
   for (let c = 9; c <= 13; c++) ark.setColumnWidth(c, 96);
   ark.getRange(1, 1, 80, 14).setFontColor(FARGE.tekst).setVerticalAlignment('middle');
 
@@ -386,7 +386,7 @@ function lagFjorFane_(ss, tabell) {
 
   // Hovedtabell
   const hode = 5;
-  ark.getRange(hode, 2, 1, 7).setValues([['', '2026 (i fjor)', '2027 bekreftet', 'Differanse', 'Av fjorårets nivå', 'Ønsker, ikke bekreftet', 'Fremdrift']]);
+  ark.getRange(hode, 2, 1, 7).setValues([['', 'I fjor (2026)', 'Bekreftet 2027', 'Endring', 'Andel av i fjor', 'Ikke bekreftet ennå', 'Fremdrift']]);
   ark.getRange(hode, 2, 1, 7).setBackground(FARGE.indigo).setFontColor(FARGE.hvit).setFontWeight('bold').setHorizontalAlignment('center');
   ark.setRowHeight(hode, 30);
 
@@ -443,7 +443,7 @@ function lagFjorFane_(ss, tabell) {
     ark.getRange(liste + 2, 8).setFormula(
       `=IFERROR(SORT(FILTER({${bedrift},${pakke}},${medIFjor}<>"${ja}",${erBekreftet}),1,TRUE),"Ingen ennå")`);
   } else {
-    ark.getRange(liste + 2, 2).setValue('Fant ingen kolonne «' + (sp.medIFjor || 'Med i fjor?') + '» i booking-tabellen.');
+    ark.getRange(liste + 2, 2).setValue('Fant ingen kolonne «' + (sp.medIFjor || 'Med i fjor?') + '» i fanen «' + tabell.ark.getName() + '». Er riktig fane valgt som booking-tabell?');
   }
   const statusOmr = ark.getRange(liste + 2, 3, 200, 1);
   ark.setConditionalFormatRules(ark.getConditionalFormatRules().concat(Object.keys(STATUSFARGE).map(st =>
