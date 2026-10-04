@@ -185,6 +185,10 @@ function ryddFane() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ui = SpreadsheetApp.getUi();
   const ark = ss.getActiveSheet();
+  if ([KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_TRADER].indexOf(ark.getName()) >= 0) {
+    ui.alert('Du står i fanen «' + ark.getName() + '». Klikk på fanen som skal ryddes (f.eks. Sheet1), og velg menyvalget på nytt.');
+    return;
+  }
   const sisteKol = Math.max(ark.getLastColumn(), 1);
   const overskrifter = ark.getRange(1, 1, 1, sisteKol).getValues()[0].map(v => String(v).trim());
 
