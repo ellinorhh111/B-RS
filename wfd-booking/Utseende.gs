@@ -64,7 +64,7 @@ function ryddArbeidsbok() {
   });
   plan.push('Systemkolonnene i booking-tabellen får farger, bredder og statusfarger. Domene og Tråd-ID skjules');
   plan.push('Oversikt blir et dashbord, «' + KONFIG.ARK_FJOR + '» sammenligner med fjoråret, og Logg får en ryddig tabell');
-  plan.push('Fanene sorteres: Oversikt, ' + KONFIG.ARK_FJOR + ', ' + KONFIG.ARK_BEDRIFTSOVERSIKT + ', Booking, Bedriftsliste, Logg');
+  plan.push('Fanene sorteres: Oversikt, ' + KONFIG.ARK_IKKE_KONTAKTET + ', ' + KONFIG.ARK_FJOR + ', ' + KONFIG.ARK_BEDRIFTSOVERSIKT + ', Booking, Bedriftsliste, Logg');
 
   const svar = ui.alert('Gjør arbeidsboken ryddig',
     'Dette blir gjort:\n\n• ' + plan.join('\n• ') + '\n\nInnholdet i tabellene dine endres ikke. Fortsette?', ui.ButtonSet.YES_NO);
@@ -104,7 +104,7 @@ function ryddArbeidsbok() {
   // 4. Tomme faner: spør for seg, siden sletting ikke kan angres med Ctrl+Z.
   const tomme = ss.getSheets().filter(a => {
     const n = a.getName();
-    if (n === tabell.ark.getName() || [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT, KONFIG.ARK_TRADER].indexOf(n) >= 0) return false;
+    if (n === tabell.ark.getName() || [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT, KONFIG.ARK_IKKE_KONTAKTET, KONFIG.ARK_TRADER].indexOf(n) >= 0) return false;
     if ((KONFIG.ANDRE_FANER || []).some(f => f.til === n)) return false;
     return a.getLastRow() <= 1;
   });
@@ -122,6 +122,7 @@ function ryddArbeidsbok() {
 function sorterFaner_(ss, tabell) {
   const rekkefolge = [
     [KONFIG.ARK_OVERSIKT, FANEFARGE.rapport],
+    [KONFIG.ARK_IKKE_KONTAKTET, FANEFARGE.rapport],
     [KONFIG.ARK_FJOR, FANEFARGE.rapport],
     [KONFIG.ARK_BEDRIFTSOVERSIKT, FANEFARGE.rapport],
     [tabell.ark.getName(), FANEFARGE.data],
@@ -145,6 +146,7 @@ function stilAlleFaner_(ss, tabell) {
   lagOversikt_(ss, tabell);
   lagFjorFane_(ss, tabell);
   lagBedriftsoversikt_(ss, tabell);
+  lagIkkeKontaktetFane_(ss);
   sorterFaner_(ss, tabell);
 }
 
@@ -531,4 +533,62 @@ function lagBedriftsoversikt_(ss, tabell) {
       .setBackground(STATUSFARGE[st][0]).setFontColor(STATUSFARGE[st][1]).setRanges([statusOmr]).build())
       .concat(Object.keys(PAKKEFARGE).map(p => SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(p)
         .setBackground(PAKKEFARGE[p][0]).setFontColor(PAKKEFARGE[p][1]).setRanges([pakkeOmr]).build())));
+}
+
+// ---------------------------------------------------------------------------
+// «Ikke kontaktet»: bedrifter i Bedriftsliste uten kontakt i høst
+// ---------------------------------------------------------------------------
+
+function lagIkkeKontaktetFane_(ss) {
+  const liste = bedriftslisteArk_(ss);
+  if (!liste) return;
+  // Bygges først når Bedriftsliste er oppdatert fra Gmail (ellers finnes ikke kolonnene den trenger).
+  const overskrifter = liste.getRange(1, 1, 1, Math.max(liste.getLastColumn(), 1)).getValues()[0].map(v => String(v).trim());
+  if (overskrifter.indexOf(BL_KOLONNER.host) < 0) return;
+  const kol = sikreBlKolonner_(liste);
+  const L = "'" + liste.getName() + "'!";
+  const omr = i => L + kolonneBokstav_(i + 1) + '2:' + kolonneBokstav_(i + 1);
+  const bedrift = L + 'A2:A';
+  const kategori = omr(kol.kategori), host = omr(kol.host), epost = omr(kol.epost), tidligere = omr(kol.tidligere), trad = omr(kol.trad);
+  // Bedriftsrader har kategori (kategorirader og tomme rader har ikke).
+  const ikke = `(${bedrift}<>"")*(${kategori}<>"")*(${host}="")`;
+
+  const ark = forberedRapport_(ss, KONFIG.ARK_IKKE_KONTAKTET, 'Ikke kontaktet i høst',
+    'Bedrifter i «' + liste.getName() + '» som ikke har fått e-post fra WFD-adressen i høst. De med e-post står øverst – ' +
+    'de kan inviteres med WFD → «Lag invitasjoner til de som ikke er kontaktet». Oppdateres fra Gmail hver natt.');
+
+  ark.getRange('B4').setFormula(
+    `=ARRAYFORMULA(SUM(${ikke}) & " ikke kontaktet   ·   " & SUM(${ikke}*(${epost}<>"")) & " har e-post   ·   " & ` +
+    `SUM(${ikke}*(${epost}="")) & " mangler kontaktperson")`)
+    .setFontSize(12).setFontWeight('bold').setFontColor(FARGE.indigo);
+  ark.setRowHeight(4, 28);
+
+  const kolonner = [['Kategori', 150], ['Bedrift', 220], ['E-post', 250], ['Kontaktet tidligere', 140], ['Siste relevante e-post', 380]];
+  const hode = 6;
+  ark.getRange(hode, 2, 1, kolonner.length).setValues([kolonner.map(k => k[0])]);
+  stilTabellhode_(ark.getRange(hode, 2, 1, kolonner.length));
+  ark.setRowHeight(hode, 30);
+  kolonner.forEach(([, b], i) => ark.setColumnWidth(2 + i, b));
+  ark.setFrozenRows(hode);
+
+  ark.getRange(hode + 1, 2).setFormula(
+    `=ARRAYFORMULA(IFERROR(SORT(` +
+    `FILTER({${kategori},${bedrift},IF(${epost}="","– mangler kontaktperson –",${epost}),${tidligere},${trad}},${ikke}),` +
+    `FILTER(${epost}="",${ikke}),TRUE,FILTER(${kategori},${ikke}),TRUE,FILTER(${bedrift},${ikke}),TRUE),` +
+    `"Alle er kontaktet 🎉"))`);
+
+  const rader = 300;
+  ark.getRange(hode + 1, 3, rader, 1).setFontWeight('bold');
+  ark.getRange(hode + 1, 2, rader, 1).setFontColor(FARGE.dempet);
+  ark.getRange(hode + 1, 5, rader, 1).setNumberFormat('d. mmm yyyy').setHorizontalAlignment('center');
+  ark.getRange(hode + 1, 6, rader, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontColor(FARGE.dempet);
+  ark.getRange(hode + 1, 2, rader, kolonner.length)
+    .setBorder(null, null, null, null, null, true, FARGE.linje, SpreadsheetApp.BorderStyle.SOLID);
+  const epostOmr = ark.getRange(hode + 1, 4, rader, 1);
+  ark.setConditionalFormatRules([
+    SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('– mangler kontaktperson –')
+      .setBackground('#FEF3C7').setFontColor('#92400E').setItalic(true).setRanges([epostOmr]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextContains('@')
+      .setBackground('#DCFCE7').setFontColor('#166534').setRanges([epostOmr]).build(),
+  ]);
 }

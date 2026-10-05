@@ -139,7 +139,8 @@ Women’s Finance Day
 
   // --- Oppfølging ---
   PURR_ETTER_DAGER: 7,          // Når en bedrift ikke har svart på så mange dager, foreslås purring.
-  DAGLIG_OPPSUMMERING_KL: 8,    // Klokkeslett for daglig oppsummering på e-post (0–23). null = av.
+  DAGLIG_OPPSUMMERING_KL: 8,
+  BEDRIFTSLISTE_HVER_NATT_KL: 3, // Bedriftsliste oppdateres fra Gmail hver natt (0–23). null = av.    // Klokkeslett for daglig oppsummering på e-post (0–23). null = av.
   SJEKK_HVERT_MINUTT: 10,       // Hvor ofte innboksen sjekkes (1, 5, 10, 15 eller 30).
 
   // --- AI (Claude) ---
@@ -211,6 +212,7 @@ Women’s Finance Day
   ARK_OVERSIKT: 'Oversikt',
   ARK_FJOR: 'Mot fjoråret',
   ARK_BEDRIFTSOVERSIKT: 'Bedriftsoversikt',
+  ARK_IKKE_KONTAKTET: 'Ikke kontaktet',
 
   // Pakkene i år. Fjorårets pakke leses fra «(Premium)» / «(Partner)» i bedriftsnavnet.
   PAKKER: { premium: 'Premium partner', partner: 'Partner' },

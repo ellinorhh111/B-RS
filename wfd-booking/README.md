@@ -104,6 +104,13 @@ slettes, og du kan redigere fritt.
 når navnet står i emnet – så bedrifter som bare er nevnt i andres e-poster ikke gir feil treff. Kategorirader i fet
 skrift hoppes over.
 
+## Ikke kontaktet
+
+Fanen **Ikke kontaktet** viser alle bedrifter i Bedriftsliste som ikke har fått e-post fra WFD-adressen i høst, med
+kategori, e-post (grønn) eller «mangler kontaktperson» (gul), når de ble kontaktet tidligere og siste relevante e-post.
+De med e-post står øverst. Bedriftsliste oppdateres fra Gmail hver natt kl. 03, og har filterknapper i
+overskriftsraden for egen filtrering og sortering.
+
 ## Invitere alle som ikke er kontaktet
 
 **WFD → Lag invitasjoner til de som ikke er kontaktet** lager et invitasjonsutkast i Gmail (fra WFD-adressen, med

@@ -28,7 +28,7 @@ function settOpp() {
   const tidligere = egenskaper.getProperty('BEDRIFTSARK');
   if (!(tidligere && ss.getSheetByName(tidligere))) {
     const aktiv = ss.getActiveSheet().getName();
-    const interne = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT, KONFIG.ARK_TRADER];
+    const interne = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT, KONFIG.ARK_IKKE_KONTAKTET, KONFIG.ARK_TRADER];
     if (interne.indexOf(aktiv) >= 0) {
       ui.alert('Åpne fanen med booking-tabellen først, og velg menyvalget på nytt.');
       return;
@@ -95,6 +95,10 @@ function settOpp() {
     ScriptApp.newTrigger('dagligOppsummering').timeBased().everyDays(1)
       .atHour(KONFIG.DAGLIG_OPPSUMMERING_KL).nearMinute(0).create();
   }
+  if (KONFIG.BEDRIFTSLISTE_HVER_NATT_KL !== null && bedriftslisteArk_(ss)) {
+    ScriptApp.newTrigger('nattligBedriftsliste').timeBased().everyDays(1)
+      .atHour(KONFIG.BEDRIFTSLISTE_HVER_NATT_KL).nearMinute(0).create();
+  }
 
   SpreadsheetApp.getUi().alert('Ferdig!\n\n' +
     '• Innboksen sjekkes hvert ' + KONFIG.SJEKK_HVERT_MINUTT + '. minutt.\n' +
@@ -119,7 +123,7 @@ function sjekkInnboksFraMeny() {
 }
 
 function stoppAutomatikk(stille) {
-  ['sjekkInnboks', 'dagligOppsummering', 'fortsettHistorikk', 'fortsettBedriftsliste'].forEach(slettTriggere_);
+  ['sjekkInnboks', 'dagligOppsummering', 'fortsettHistorikk', 'fortsettBedriftsliste', 'nattligBedriftsliste'].forEach(slettTriggere_);
   PropertiesService.getScriptProperties().deleteProperty('HISTORIKK_POS');
   if (stille !== true) SpreadsheetApp.getUi().alert('All automatikk er stoppet. Velg «Sett opp arket og automatikk» for å starte igjen.');
 }
@@ -163,7 +167,7 @@ function ryddFane() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const ui = SpreadsheetApp.getUi();
   const ark = ss.getActiveSheet();
-  if ([KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT, KONFIG.ARK_TRADER].indexOf(ark.getName()) >= 0) {
+  if ([KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT, KONFIG.ARK_IKKE_KONTAKTET, KONFIG.ARK_TRADER].indexOf(ark.getName()) >= 0) {
     ui.alert('Du står i fanen «' + ark.getName() + '». Klikk på fanen som skal ryddes (f.eks. Sheet1), og velg menyvalget på nytt.');
     return;
   }
