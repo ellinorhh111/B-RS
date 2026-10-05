@@ -2062,6 +2062,10 @@ function oppdaterBedriftsliste() {
     '\n\nKolonnene og innholdet ditt endres ikke. Det kan ta noen minutter; du får en e-post når det er ferdig. Fortsette?',
     ui.ButtonSet.YES_NO);
   if (svar !== ui.Button.YES) return;
+  // Tøm systemkolonnene først, inkludert gamle avkrysningsbokser, så kategorirader og tomme rader blir rene.
+  const kol = sikreBlKolonner_(ark);
+  const maks = Math.max(ark.getMaxRows() - 1, 1);
+  Object.keys(kol).forEach(k => ark.getRange(2, kol[k] + 1, maks, 1).clearDataValidations().clearContent());
   PropertiesService.getScriptProperties().setProperty('BL_POS', '0');
   fortsettBedriftsliste();
 }
@@ -2138,8 +2142,8 @@ function sikreBlKolonner_(ark) {
   });
   [kol.host, kol.tidligere].forEach(k => ark.getRange(2, k + 1, maks, 1).setNumberFormat('d. mmm yyyy').setHorizontalAlignment('center'));
   ark.getRange(2, kol.svar + 1, maks, 1).setHorizontalAlignment('center');
-  ark.getRange(2, kol.trad + 1, maks, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-  ark.getRange(2, kol.epost + 1, maks, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+  ark.getRange(2, kol.trad + 1, maks, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setHorizontalAlignment('left');
+  ark.getRange(2, kol.epost + 1, maks, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setHorizontalAlignment('left');
 
   // Farger: grønn = svart i høst, gul = kontaktet uten svar.
   const svarOmr = ark.getRange(2, kol.svar + 1, maks, 1);
