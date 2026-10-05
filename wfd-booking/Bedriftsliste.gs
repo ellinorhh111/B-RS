@@ -243,9 +243,20 @@ function invitasjonsKandidater_(ark) {
     if (!bedrift || fet[i] || !epost || r[kol.host]) return;
     if (iBooking[normaliserNavn_(sokeNavn_(bedrift))]) return;
     if (utkastTil[epost]) return;
-    ut.push({ rad: i + 2, bedrift: sokeNavn_(bedrift), epost, tidligere: r[kol.tidligere] });
+    ut.push({ rad: i + 2, bedrift: sokeNavn_(bedrift), epost, tidligere: r[kol.tidligere], norsk: erNorsk_(epost, r[kol.trad]) });
   });
   return ut;
+}
+
+/**
+ * Norsk eller engelsk? Først ut fra emnet i forrige e-post med bedriften (FSN Capital har .com, men dere har
+ * skrevet sammen på norsk), deretter ut fra domenet.
+ */
+function erNorsk_(epost, forrigeEmne) {
+  const emne = String(forrigeEmne || '');
+  if (/invitasjon|handelshøyskole|\b(sv|vs|vb):/i.test(emne)) return true;
+  if (/invitation|\b(fw|fwd):/i.test(emne)) return false;
+  return /\.no$/.test(String(epost));
 }
 
 /** Henter invitasjons-PDF-en fra en invitasjon du har sendt tidligere (filnavnet må begynne med «filnavn»). */
@@ -289,7 +300,7 @@ function lagInvitasjoner() {
   const igjen = [];
   kandidater.forEach(k => {
     if (Date.now() - start > MAKS_KJORETID_MS) { igjen.push(k.bedrift); return; }
-    const norsk = /\.no$/.test(k.epost);
+    const norsk = k.norsk;
     const fornavn = fornavnFraEpost_(k.epost);
     const hilsen = norsk ? (fornavn ? 'Hei ' + fornavn : 'Hei') : (fornavn ? 'Hi ' + fornavn : 'Hi');
     const tekst = (norsk ? KONFIG.INVITASJON_NO : KONFIG.INVITASJON_EN)
