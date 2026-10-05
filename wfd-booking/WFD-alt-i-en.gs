@@ -1498,9 +1498,12 @@ function onOpen() {
     .addItem('Oppdater Bedriftsliste fra Gmail', 'oppdaterBedriftsliste')
     .addItem('Lag invitasjoner til de som ikke er kontaktet', 'lagInvitasjoner')
     .addItem('Gjør arbeidsboken ryddig og pen', 'ryddArbeidsbok')
+    .addItem('Legg bedrifter fra Booking inn i Bedriftsliste', 'leggBookingIBedriftslisteMeny')
     .addItem('Fjern ekstra farger i Booking', 'fjernEkstraFarger')
     .addItem('Stopp all automatikk', 'stoppAutomatikk')
     .addItem('Rydd opp: fjern systemets kolonner fra denne fanen', 'ryddFane')
+    .addSeparator()
+    .addItem('Nytt år: arkiver Booking og start på nytt', 'nySesong')
     .addToUi();
 }
 
@@ -1702,6 +1705,54 @@ function ryddFane() {
   }
 }
 
+
+/**
+ * Nytt år (gjøres etter at årets WFD er ferdig): Booking arkiveres som en skjult kopi og tømmes, mens Bedriftsliste
+ * beholdes med alle bedriftene. Årsspesifikke kolonner i Bedriftsliste (kontaktet i høst, svar, koblingen til Booking,
+ * «Har kontaktet») tømmes; «Ikke aktuell», kontakter og dine egne kolonner blir stående.
+ */
+function nySesong() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const tabell = lesBedrifter_();
+  const ar = new Date().getFullYear();
+  const arkivNavn = tabell.ark.getName() + ' ' + ar + ' (arkiv)';
+  const svar = ui.alert('Nytt år – start booking på nytt',
+    'Dette gjøres:\n\n' +
+    '• «' + tabell.ark.getName() + '» kopieres til en skjult fane «' + arkivNavn + '» (ingenting går tapt)\n' +
+    '• Alle bedriftsradene i «' + tabell.ark.getName() + '» slettes (overskriftene blir stående)\n' +
+    '• Bedriftsliste beholdes. Kolonnene for i år tømmes: kontaktet i høst, svar, siste e-post, «Navn i Booking» ' +
+    'og «Har kontaktet». «Ikke aktuell», kontakter og dine egne kolonner blir stående\n' +
+    '• Automatikken stoppes til du har kjørt «1. Sett opp» på nytt\n\n' +
+    'Gjør dette først når årets WFD er ferdig. Fortsette?', ui.ButtonSet.YES_NO);
+  if (svar !== ui.Button.YES) return;
+  const sikker = ui.alert('Er du helt sikker?', 'Booking tømmes for ' + tabell.rader.length + ' bedrifter (kopien beholdes i «' +
+    arkivNavn + '»).', ui.ButtonSet.YES_NO);
+  if (sikker !== ui.Button.YES) return;
+
+  stoppAutomatikk(true);
+  const kopi = tabell.ark.copyTo(ss).setName(arkivNavn);
+  kopi.hideSheet();
+  if (tabell.ark.getLastRow() > 1) tabell.ark.deleteRows(2, tabell.ark.getLastRow() - 1);
+
+  const liste = bedriftslisteArk_(ss);
+  if (liste && liste.getLastRow() > 1) {
+    const h = overskrifter_(liste);
+    BL_AUTO.concat(['bookingNavn', 'manuelt']).forEach(k => {
+      const kol = h.indexOf(BL_KOLONNER[k]) + 1;
+      if (kol) liste.getRange(2, kol, liste.getLastRow() - 1, 1).clearContent();
+    });
+  }
+  const trader = ss.getSheetByName(KONFIG.ARK_TRADER);
+  if (trader && trader.getLastRow() > 1) trader.deleteRows(2, trader.getLastRow() - 1);
+  PropertiesService.getScriptProperties().deleteProperty('NETTKONTAKTER_FYLT');
+
+  ui.alert('Ferdig. Booking er tom, og fjorårets ligger i den skjulte fanen «' + arkivNavn + '».\n\n' +
+    'Før du starter igjen, oppdater i Konfig: ARRANGEMENT (datoer, pakker, priser), HISTORIKK_FRA_DATO, ' +
+    'INVITASJON_NO/EN og kolonnenavnene «Pakke ' + (ar + 1) + '» og «Kontaktet høst ' + ar + '» (BL_KOLONNER). ' +
+    'Kjør så «1. Sett opp arket og automatikk».');
+}
+
 // ===================== Utseende.gs =====================
 /**
  * Utseende: fanenavn, farger, kolonnebredder og oversiktssiden.
@@ -1785,6 +1836,11 @@ function ryddArbeidsbok() {
       'bedriftsnavnet. Kontakter hentet fra nettet legges i «Annen kontakt» og markeres oransje. Kategorirader utheves, ' +
       'og alle kolonnene får filterknapper');
   }
+  const bareBooking = blArk ? bareIBooking_(ss).mangler : [];
+  if (bareBooking.length) {
+    plan.push(bareBooking.length + ' bedrifter som bare står i Booking legges nederst i Bedriftsliste («' + NYE_FRA_BOOKING +
+      '»): ' + bareBooking.slice(0, 6).map(m => m.navn).join(', ') + (bareBooking.length > 6 ? ' …' : ''));
+  }
   const nyeNavn = autonavnIBooking_(tabell);
   if (nyeNavn.length) {
     plan.push('Booking: ' + nyeNavn.length + ' bedrifter med navn laget av e-postdomenet får navnet fra Bedriftsliste (' +
@@ -1844,6 +1900,7 @@ function ryddArbeidsbok() {
     nettFylt = fyllNettkontakter_(blArk, kolBl);
   }
   const omdopt = gjorOmAutonavn_(lesBedrifter_(), nyeNavn);
+  const lagtTilListe = blArk && bareBooking.length ? leggBookingIBedriftsliste_() : [];
 
   // 5. Utseende
   tabell = plasserPakkeKolonne_(lesBedrifter_());
@@ -1872,6 +1929,7 @@ function ryddArbeidsbok() {
   ui.alert('Ferdig!' + (oppdatertStatus ? '\n\nStatus ble oppdatert på ' + oppdatertStatus + ' rader ut fra kolonnene dine.' : '') +
     (nettFylt ? '\n\n' + nettFylt + ' kontakter fra nettet er lagt inn i Bedriftsliste (oransje – sjekk før bruk).' : '') +
     (omdopt ? '\n\n' + omdopt + ' bedrifter i Booking fikk navnet fra Bedriftsliste.' : '') +
+    (lagtTilListe.length ? '\n\n' + lagtTilListe.length + ' bedrifter fra Booking er lagt nederst i Bedriftsliste – flytt dem til riktig kategori.' : '') +
     (feil.length ? '\n\nMerk:\n' + feil.join('\n') : ''));
 }
 
@@ -2891,8 +2949,11 @@ function stilBedriftsliste_(ark, kol) {
     ark.getRange(1, kol[k] + 1).setBackground(FARGE.indigo).setFontColor(FARGE.hvit).setFontWeight('bold');
     ark.setColumnWidth(kol[k] + 1, bredder[k] || 130);
   });
-  ark.getRange(1, 1).setNote('Søk: Ctrl/Cmd + F, eller klikk filterknappen i en overskrift og skriv i søkefeltet.\n' +
-    'Kontaktstatus viser om bedriften er kontaktet. Kryss av i «Har kontaktet» hvis den er kontaktet på annen måte.');
+  ark.getRange(1, 1).setNote('Bedriftsliste = alle relevante bedrifter: hvem de er, hvordan dere når dem og hvor langt ' +
+    'dere har kommet. Notater, pakke og ønsker skrives i Booking.\n\n' +
+    'Søk: Ctrl/Cmd + F, eller klikk filterknappen i en overskrift og skriv i søkefeltet.\n' +
+    'Nye bedrifter: legg dem inn her (under riktig fet kategori). Bedrifter som bare står i Booking legges til automatisk ' +
+    'hver natt, nederst under «' + NYE_FRA_BOOKING + '».');
   [kol.host, kol.tidligere].forEach(k => ark.getRange(2, k + 1, maks, 1).setNumberFormat('d. mmm yyyy').setHorizontalAlignment('center'));
   [kol.svar, kol.manuelt, kol.ikkeAktuell].forEach(k => ark.getRange(2, k + 1, maks, 1).setHorizontalAlignment('center'));
   ark.getRange(2, kol.bookingNavn + 1, maks, 1).setFontColor(FARGE.dempet);
@@ -2935,7 +2996,7 @@ function stilBedriftsliste_(ark, kol) {
   // Filterknapper i overskriftsraden over alle kolonnene.
   try {
     const filter = ark.getFilter();
-    if (filter && filter.getRange().getNumColumns() < sisteKol) filter.remove();
+    if (filter && (filter.getRange().getNumColumns() < sisteKol || filter.getRange().getNumRows() < ark.getLastRow())) filter.remove();
     if (!ark.getFilter()) ark.getRange(1, 1, Math.max(ark.getLastRow(), 2), sisteKol).createFilter();
   } catch (e) {
     console.warn('Filter i Bedriftsliste: ' + e.message);
@@ -3370,8 +3431,80 @@ function utenKontaktperson_(ark) {
 
 /** Kjøres automatisk hver natt, så «Ikke kontaktet» alltid er oppdatert. */
 function nattligBedriftsliste() {
+  try { leggBookingIBedriftsliste_(); } catch (e) { console.warn('Booking → Bedriftsliste: ' + e.message); }
   startBlKjoring_();
   fortsettBedriftsliste();
+}
+
+
+// ---------------------------------------------------------------------------
+// Alle bedrifter skal stå i Bedriftsliste: bedrifter som bare står i Booking legges til
+// ---------------------------------------------------------------------------
+
+const NYE_FRA_BOOKING = 'Nye fra Booking – flytt til riktig kategori';
+
+/** Bedrifter i Booking som ikke er koblet til (eller står med samme navn i) Bedriftsliste. */
+function bareIBooking_(ss) {
+  const liste = bedriftslisteArk_(ss);
+  if (!liste) return { liste: null, mangler: [] };
+  // Bare lesing her (ingen stil eller forslag), så planen kan vises før noe endres.
+  const h = overskrifter_(liste);
+  const kol = { bookingNavn: h.indexOf(BL_KOLONNER.bookingNavn) };
+  const antall = Math.max(liste.getLastRow() - 1, 0);
+  const v = antall ? liste.getRange(2, 1, antall, liste.getLastColumn()).getValues() : [];
+  const koblet = {}, navn = {};
+  v.forEach(r => {
+    if (kol.bookingNavn >= 0 && String(r[kol.bookingNavn]).trim()) koblet[String(r[kol.bookingNavn]).trim()] = true;
+    const n = utenAksent_(normaliserNavn_(sokeNavn_(String(r[0]))));
+    if (n) navn[n] = true;
+  });
+  const tabell = lesBedrifter_();
+  const mangler = [];
+  tabell.rader.forEach((r, i) => {
+    const b = String(celle_(tabell, i, 'bedrift')).trim();
+    const n = utenAksent_(normaliserNavn_(sokeNavn_(b)));
+    if (!b || koblet[b] || navn[n]) return;
+    navn[n] = true;
+    mangler.push({ booking: b, navn: sokeNavn_(b) });
+  });
+  return { liste, kol, mangler };
+}
+
+/** Legger bedriftene som bare står i Booking nederst i Bedriftsliste, under en egen kategori. Returnerer navnene. */
+function leggBookingIBedriftsliste_() {
+  const ss = hentRegneark_();
+  const { liste, mangler } = bareIBooking_(ss);
+  if (!liste || !mangler.length) return [];
+  const kol = sikreBlKolonner_(liste);
+  const navnA = liste.getRange(1, 1, Math.max(liste.getLastRow(), 1), 1).getValues().map(r => String(r[0]).trim());
+  if (navnA.indexOf(NYE_FRA_BOOKING) < 0) {
+    const r = liste.getLastRow() + 1;
+    liste.getRange(r, 1).setValue(NYE_FRA_BOOKING).setFontWeight('bold');
+  }
+  const start = liste.getLastRow() + 1;
+  const bredde = liste.getLastColumn();
+  liste.getRange(start, 1, mangler.length, bredde).setValues(mangler.map(m => {
+    const rad = new Array(bredde).fill('');
+    rad[0] = m.navn;
+    rad[kol.bookingNavn] = m.booking; // sikker kobling: raden kommer fra Booking
+    return rad;
+  })).setFontWeight('normal');
+  sikreBlKolonner_(liste); // kategori, avkrysning, filter og farger for de nye radene
+  return mangler.map(m => m.navn);
+}
+
+/** Menyvalg: legg bedrifter som bare står i Booking inn i Bedriftsliste. */
+function leggBookingIBedriftslisteMeny() {
+  const ui = SpreadsheetApp.getUi();
+  const { mangler } = bareIBooking_(SpreadsheetApp.getActiveSpreadsheet());
+  if (!mangler.length) { ui.alert('Alle bedriftene i Booking står allerede i Bedriftsliste. 🎉'); return; }
+  const svar = ui.alert('Legg bedrifter fra Booking inn i Bedriftsliste',
+    mangler.length + ' bedrifter står i Booking, men ikke i Bedriftsliste:\n\n• ' + mangler.map(m => m.navn).join('\n• ') +
+    '\n\nDe legges nederst i Bedriftsliste under «' + NYE_FRA_BOOKING + '», koblet til raden sin i Booking. ' +
+    'Flytt dem til riktig kategori når det passer (klipp ut og lim inn raden). Fortsette?', ui.ButtonSet.YES_NO);
+  if (svar !== ui.Button.YES) return;
+  const lagt = leggBookingIBedriftsliste_();
+  ui.alert(lagt.length + ' bedrifter er lagt til nederst i Bedriftsliste.');
 }
 
 // ===================== Nettkontakter.gs =====================

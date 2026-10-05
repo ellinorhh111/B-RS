@@ -80,6 +80,11 @@ function ryddArbeidsbok() {
       'bedriftsnavnet. Kontakter hentet fra nettet legges i «Annen kontakt» og markeres oransje. Kategorirader utheves, ' +
       'og alle kolonnene får filterknapper');
   }
+  const bareBooking = blArk ? bareIBooking_(ss).mangler : [];
+  if (bareBooking.length) {
+    plan.push(bareBooking.length + ' bedrifter som bare står i Booking legges nederst i Bedriftsliste («' + NYE_FRA_BOOKING +
+      '»): ' + bareBooking.slice(0, 6).map(m => m.navn).join(', ') + (bareBooking.length > 6 ? ' …' : ''));
+  }
   const nyeNavn = autonavnIBooking_(tabell);
   if (nyeNavn.length) {
     plan.push('Booking: ' + nyeNavn.length + ' bedrifter med navn laget av e-postdomenet får navnet fra Bedriftsliste (' +
@@ -139,6 +144,7 @@ function ryddArbeidsbok() {
     nettFylt = fyllNettkontakter_(blArk, kolBl);
   }
   const omdopt = gjorOmAutonavn_(lesBedrifter_(), nyeNavn);
+  const lagtTilListe = blArk && bareBooking.length ? leggBookingIBedriftsliste_() : [];
 
   // 5. Utseende
   tabell = plasserPakkeKolonne_(lesBedrifter_());
@@ -167,6 +173,7 @@ function ryddArbeidsbok() {
   ui.alert('Ferdig!' + (oppdatertStatus ? '\n\nStatus ble oppdatert på ' + oppdatertStatus + ' rader ut fra kolonnene dine.' : '') +
     (nettFylt ? '\n\n' + nettFylt + ' kontakter fra nettet er lagt inn i Bedriftsliste (oransje – sjekk før bruk).' : '') +
     (omdopt ? '\n\n' + omdopt + ' bedrifter i Booking fikk navnet fra Bedriftsliste.' : '') +
+    (lagtTilListe.length ? '\n\n' + lagtTilListe.length + ' bedrifter fra Booking er lagt nederst i Bedriftsliste – flytt dem til riktig kategori.' : '') +
     (feil.length ? '\n\nMerk:\n' + feil.join('\n') : ''));
 }
 

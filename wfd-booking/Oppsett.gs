@@ -16,9 +16,12 @@ function onOpen() {
     .addItem('Oppdater Bedriftsliste fra Gmail', 'oppdaterBedriftsliste')
     .addItem('Lag invitasjoner til de som ikke er kontaktet', 'lagInvitasjoner')
     .addItem('Gjør arbeidsboken ryddig og pen', 'ryddArbeidsbok')
+    .addItem('Legg bedrifter fra Booking inn i Bedriftsliste', 'leggBookingIBedriftslisteMeny')
     .addItem('Fjern ekstra farger i Booking', 'fjernEkstraFarger')
     .addItem('Stopp all automatikk', 'stoppAutomatikk')
     .addItem('Rydd opp: fjern systemets kolonner fra denne fanen', 'ryddFane')
+    .addSeparator()
+    .addItem('Nytt år: arkiver Booking og start på nytt', 'nySesong')
     .addToUi();
 }
 
@@ -218,4 +221,52 @@ function ryddFane() {
   } else {
     ui.alert('Ferdig.');
   }
+}
+
+
+/**
+ * Nytt år (gjøres etter at årets WFD er ferdig): Booking arkiveres som en skjult kopi og tømmes, mens Bedriftsliste
+ * beholdes med alle bedriftene. Årsspesifikke kolonner i Bedriftsliste (kontaktet i høst, svar, koblingen til Booking,
+ * «Har kontaktet») tømmes; «Ikke aktuell», kontakter og dine egne kolonner blir stående.
+ */
+function nySesong() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const tabell = lesBedrifter_();
+  const ar = new Date().getFullYear();
+  const arkivNavn = tabell.ark.getName() + ' ' + ar + ' (arkiv)';
+  const svar = ui.alert('Nytt år – start booking på nytt',
+    'Dette gjøres:\n\n' +
+    '• «' + tabell.ark.getName() + '» kopieres til en skjult fane «' + arkivNavn + '» (ingenting går tapt)\n' +
+    '• Alle bedriftsradene i «' + tabell.ark.getName() + '» slettes (overskriftene blir stående)\n' +
+    '• Bedriftsliste beholdes. Kolonnene for i år tømmes: kontaktet i høst, svar, siste e-post, «Navn i Booking» ' +
+    'og «Har kontaktet». «Ikke aktuell», kontakter og dine egne kolonner blir stående\n' +
+    '• Automatikken stoppes til du har kjørt «1. Sett opp» på nytt\n\n' +
+    'Gjør dette først når årets WFD er ferdig. Fortsette?', ui.ButtonSet.YES_NO);
+  if (svar !== ui.Button.YES) return;
+  const sikker = ui.alert('Er du helt sikker?', 'Booking tømmes for ' + tabell.rader.length + ' bedrifter (kopien beholdes i «' +
+    arkivNavn + '»).', ui.ButtonSet.YES_NO);
+  if (sikker !== ui.Button.YES) return;
+
+  stoppAutomatikk(true);
+  const kopi = tabell.ark.copyTo(ss).setName(arkivNavn);
+  kopi.hideSheet();
+  if (tabell.ark.getLastRow() > 1) tabell.ark.deleteRows(2, tabell.ark.getLastRow() - 1);
+
+  const liste = bedriftslisteArk_(ss);
+  if (liste && liste.getLastRow() > 1) {
+    const h = overskrifter_(liste);
+    BL_AUTO.concat(['bookingNavn', 'manuelt']).forEach(k => {
+      const kol = h.indexOf(BL_KOLONNER[k]) + 1;
+      if (kol) liste.getRange(2, kol, liste.getLastRow() - 1, 1).clearContent();
+    });
+  }
+  const trader = ss.getSheetByName(KONFIG.ARK_TRADER);
+  if (trader && trader.getLastRow() > 1) trader.deleteRows(2, trader.getLastRow() - 1);
+  PropertiesService.getScriptProperties().deleteProperty('NETTKONTAKTER_FYLT');
+
+  ui.alert('Ferdig. Booking er tom, og fjorårets ligger i den skjulte fanen «' + arkivNavn + '».\n\n' +
+    'Før du starter igjen, oppdater i Konfig: ARRANGEMENT (datoer, pakker, priser), HISTORIKK_FRA_DATO, ' +
+    'INVITASJON_NO/EN og kolonnenavnene «Pakke ' + (ar + 1) + '» og «Kontaktet høst ' + ar + '» (BL_KOLONNER). ' +
+    'Kjør så «1. Sett opp arket og automatikk».');
 }

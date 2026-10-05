@@ -105,6 +105,24 @@ Fanen **Bedriftsoversikt** viser hvem som er med (bekreftet øverst, så interes
 fra bedriftens egne e-poster der de nevner workshop, dato, stand, panel o.l. Nye ønsker legges til, ingenting
 slettes, og du kan redigere fritt.
 
+## Booking og Bedriftsliste – hva hører hvor?
+
+| | **Bedriftsliste** | **Booking** |
+|---|---|---|
+| Spørsmål | Hvem kunne vi invitert? | Hvem jobber vi med i år, og hvor står de? |
+| Innhold | Alle relevante finansbedrifter, i kategorier | Bedriftene dere har kontakt med i år |
+| Her skriver dere | Nye bedrifter, kontakter, «Har kontaktet», «Ikke aktuell» | Notater (Veien videre), pakke, spesielle ønsker, status |
+| Levetid | Beholdes år etter år | Arkiveres og tømmes hvert år |
+
+**Alle bedrifter skal stå i Bedriftsliste.** Bedrifter som bare står i Booking legges automatisk nederst i
+Bedriftsliste hver natt (og ved «Gjør arbeidsboken ryddig og pen») under «Nye fra Booking – flytt til riktig kategori»,
+koblet til raden sin i Booking. Det kan også gjøres med **WFD → Legg bedrifter fra Booking inn i Bedriftsliste**.
+
+**Nytt år:** **WFD → Nytt år: arkiver Booking og start på nytt** lager en skjult kopi av Booking («Booking ÅÅÅÅ (arkiv)»),
+tømmer Booking, og tømmer årets kolonner i Bedriftsliste (kontaktet i høst, svar, siste e-post, Navn i Booking, Har
+kontaktet). Ikke aktuell, kontakter og egne kolonner blir stående. Oppdater deretter Konfig (datoer, pakker,
+HISTORIKK_FRA_DATO, invitasjonstekster) og kjør «1. Sett opp» på nytt.
+
 ## Bedriftsliste
 
 Bedriftsliste er oversikten over alle finansbedrifter dere synes er relevante. Rett etter bedriftsnavnet står:
