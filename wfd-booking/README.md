@@ -104,6 +104,19 @@ slettes, og du kan redigere fritt.
 når navnet står i emnet – så bedrifter som bare er nevnt i andres e-poster ikke gir feil treff. Kategorirader i fet
 skrift hoppes over.
 
+## Invitere alle som ikke er kontaktet
+
+**WFD → Lag invitasjoner til de som ikke er kontaktet** lager et invitasjonsutkast i Gmail (fra WFD-adressen, med
+invitasjons-PDF-en fra en tidligere sendt invitasjon) til hver bedrift i Bedriftsliste som
+
+* ikke er kontaktet i høst,
+* har en e-postadresse i «E-post (fra Gmail)»,
+* ikke allerede er invitert eller i dialog i Booking, og
+* ikke allerede har et utkast.
+
+Norsk tekst til .no-adresser, engelsk ellers. Tekstene ligger i `KONFIG.INVITASJON_NO` / `INVITASJON_EN`. Ingenting
+sendes automatisk. Til slutt får du en liste over bedrifter som heller ikke er kontaktet, men som mangler e-post.
+
 ## Slik bruker du det i hverdagen
 
 * **På mobilen:** Åpne Gmail og etiketten **WFD/Svar klart**. Hver tråd der har et ferdig utkast. Les gjennom,

@@ -13,6 +13,7 @@ function onOpen() {
     .addItem('Send oppsummering nå', 'dagligOppsummering')
     .addSeparator()
     .addItem('Oppdater Bedriftsliste fra Gmail', 'oppdaterBedriftsliste')
+    .addItem('Lag invitasjoner til de som ikke er kontaktet', 'lagInvitasjoner')
     .addItem('Gjør arbeidsboken ryddig og pen', 'ryddArbeidsbok')
     .addItem('Stopp all automatikk', 'stoppAutomatikk')
     .addItem('Rydd opp: fjern systemets kolonner fra denne fanen', 'ryddFane')

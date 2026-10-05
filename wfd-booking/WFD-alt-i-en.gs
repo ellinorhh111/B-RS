@@ -40,6 +40,62 @@ Head of Booking
 Women's Finance Day
 +47 911 59 679 | wfd.booking@nhhs.no`,
 
+  // --- Invitasjoner (menyvalget «Lag invitasjoner til de som ikke er kontaktet») ---
+  // {navn} = «Hei Helene» / «Hei» (fornavn fra e-postadressen når det går), {bedrift} = bedriftsnavnet.
+  // Norsk brukes til .no-adresser, engelsk ellers. PDF-en hentes fra en invitasjon du allerede har sendt.
+  INVITASJON_EMNE_NO: "Invitasjon til Women's Finance Day ved Norges Handelshøyskole 2027",
+  INVITASJON_EMNE_EN: 'Invitation to Women’s Finance Day 2027 at NHH',
+  INVITASJON_PDF_NO: 'WFD_2027_NO.pdf',
+  INVITASJON_PDF_EN: 'WFD_2027_ENG',
+  INVITASJON_NO: `{navn},
+
+Vi har gleden av å invitere {bedrift} til Women’s Finance Day 2027 ved NHH.
+
+Women’s Finance Day samler kvinnelige NHH-studenter og finansbransjen. Arrangementet arrangeres av Næringslivsutvalget, Finansgruppen og Femme Forvaltning ved NHH. Målet er å inspirere flere kvinner til en karriere innen finans, samtidig som samarbeidspartnerne får møte dyktige studenter og styrke sin synlighet som arbeidsgiver.
+
+WFD 2026 ble en stor suksess. Studentpåmeldingen ble fulltegnet på under ett minutt, med over 100 studenter på venteliste. I etterkant oppga 84 prosent av respondentene at WFD i stor grad hadde økt interessen deres for finans.
+
+Gjennom stands, foredrag, paneldebatt, workshops og nettverksaktiviteter får samarbeidspartnerne møte studentene både bredt og i mindre, faglig orienterte grupper. Premium-partnere kan i tillegg arrangere en egen nettverksøkt i forbindelse med WFD eller WFP, samt promotere internship- og graduate-stillinger gjennom våre kanaler.
+
+Datoene for 2027 er:
+
+• Women’s Finance Program: onsdag 3. mars
+• Women’s Finance Day: torsdag 4. mars
+
+I den vedlagte invitasjonen finner dere mer informasjon om årets samarbeidsmuligheter, pakker og priser.
+
+Dersom dere ønsker å delta, svar gjerne på denne e-posten innen fredag 16. oktober. Gi også beskjed dersom invitasjonen bør sendes til en annen person.
+
+Vi håper å ønske {bedrift} velkommen til WFD 2027!`,
+  INVITASJON_EN: `{navn},
+
+We would be delighted to invite {bedrift} to Women’s Finance Day at NHH in Bergen next March.
+
+Women’s Finance Day brings together female NHH students and the finance industry. The event is organised by the Business Committee, the Finance Group and Femme Forvaltning at NHH. Our aim is to inspire more women to explore careers in finance, while giving our partners the opportunity to meet talented students and strengthen their visibility as employers.
+
+Our workshops and main programme are exclusively for female students, while the company stands are open to all NHH students.
+
+In 2026, all student places were filled in less than one minute, with more than 100 students joining the waiting list. After the event, 84% of respondents said that WFD had significantly increased their interest in finance.
+
+Through company stands, presentations, panel discussions, workshops and networking activities, our partners can meet students both broadly and in smaller, professionally focused groups. Premium partners may also host a separate networking session, promote internship and graduate opportunities through our channels, and organise a workshop during WFD or the Women’s Finance Program.
+
+The dates for 2027 are:
+
+• Women’s Finance Program: Wednesday, 3 March
+• Women’s Finance Day: Thursday, 4 March
+
+Please find attached an invitation with further information about the partnership opportunities, packages and prices.
+
+If {bedrift} would like to participate, please reply by Friday, 16 October. Please also feel free to forward the invitation to the relevant colleague if someone else is responsible for partnerships or recruitment activities.
+
+We hope to welcome {bedrift} to Women’s Finance Day 2027!`,
+  SIGNATUR_EN: `
+Best regards,
+Ellinor Hangerhagen
+Head of Booking
+Women’s Finance Day
++47 911 59 679 | wfd.booking@nhhs.no`,
+
   // Tone og stil i svarene.
   TONE: 'Profesjonell, vennlig og kortfattet. Svar på samme språk som bedriften skrev på (norsk eller engelsk). Avslutt med et tydelig neste steg.',
 
@@ -1289,6 +1345,7 @@ function onOpen() {
     .addItem('Send oppsummering nå', 'dagligOppsummering')
     .addSeparator()
     .addItem('Oppdater Bedriftsliste fra Gmail', 'oppdaterBedriftsliste')
+    .addItem('Lag invitasjoner til de som ikke er kontaktet', 'lagInvitasjoner')
     .addItem('Gjør arbeidsboken ryddig og pen', 'ryddArbeidsbok')
     .addItem('Stopp all automatikk', 'stoppAutomatikk')
     .addItem('Rydd opp: fjern systemets kolonner fra denne fanen', 'ryddFane')
@@ -2217,4 +2274,133 @@ function sisteEpostOm_(bedrift, periode) {
     }
   });
   return best;
+}
+
+// ---------------------------------------------------------------------------
+// Invitasjonsutkast til bedrifter på Bedriftsliste som ikke er kontaktet i høst
+// ---------------------------------------------------------------------------
+
+const GENERISKE_ADRESSER = ['post', 'info', 'hr', 'kontakt', 'contact', 'mail', 'office', 'firmapost', 'recruitment',
+  'rekruttering', 'careers', 'career', 'talent', 'jobs', 'campus', 'admin', 'hello', 'hei', 'events', 'marketing'];
+
+/** «helene.wekre@…» → «Helene». Tom tekst når adressen ikke ser ut som et navn. */
+function fornavnFraEpost_(epost) {
+  const lokal = String(epost).split('@')[0].toLowerCase();
+  const forste = lokal.split(/[._-]/)[0];
+  if (!/^[a-zæøåäöé]{3,}$/.test(forste) || GENERISKE_ADRESSER.indexOf(forste) >= 0) return '';
+  if (lokal.indexOf('.') < 0 && lokal.indexOf('_') < 0 && lokal.indexOf('-') < 0 && forste.length <= 4) return ''; // «haha@», «ss@»
+  return forste.charAt(0).toUpperCase() + forste.slice(1);
+}
+
+/** Bedrifter i Booking som allerede er invitert eller i dialog (normaliserte navn). */
+function alleredeInvitertIBooking_() {
+  const ut = {};
+  try {
+    const tabell = lesBedrifter_();
+    const sp = KONFIG.SPEIL || {};
+    const inv = tabell.alle[sp.invitasjonSendt];
+    tabell.rader.forEach((r, i) => {
+      const status = String(celle_(tabell, i, 'status'));
+      const sendt = inv !== undefined && String(r[inv]).toLowerCase() === String(sp.ja || 'Ja').toLowerCase();
+      if (sendt || (status && status !== KONFIG.STATUSER[0])) ut[normaliserNavn_(sokeNavn_(celle_(tabell, i, 'bedrift')))] = true;
+    });
+  } catch (e) { /* ingen booking-fane valgt ennå */ }
+  return ut;
+}
+
+/** Finner kandidatene: ikke kontaktet i høst, har e-post, ikke invitert i Booking, ingen utkast fra før. */
+function invitasjonsKandidater_(ark) {
+  const kol = sikreBlKolonner_(ark);
+  const antall = Math.max(ark.getLastRow() - 1, 0);
+  if (!antall) return [];
+  const verdier = ark.getRange(2, 1, antall, ark.getLastColumn()).getValues();
+  const fet = ark.getRange(2, 1, antall, 1).getFontWeights().map(r => r[0] === 'bold');
+  const iBooking = alleredeInvitertIBooking_();
+  const utkastTil = {};
+  GmailApp.getDrafts().forEach(d => {
+    try { tolkAdresser_(d.getMessage().getTo()).forEach(a => { utkastTil[a.epost] = true; }); } catch (e) { /* hopp over */ }
+  });
+  const ut = [];
+  verdier.forEach((r, i) => {
+    const bedrift = String(r[0]).trim();
+    const epost = String(r[kol.epost]).trim().toLowerCase();
+    if (!bedrift || fet[i] || !epost || r[kol.host]) return;
+    if (iBooking[normaliserNavn_(sokeNavn_(bedrift))]) return;
+    if (utkastTil[epost]) return;
+    ut.push({ rad: i + 2, bedrift: sokeNavn_(bedrift), epost, tidligere: r[kol.tidligere] });
+  });
+  return ut;
+}
+
+/** Henter invitasjons-PDF-en fra en invitasjon du har sendt tidligere (filnavnet må begynne med «filnavn»). */
+function hentInvitasjonsPdf_(filnavn) {
+  const prefiks = filnavn.replace(/\.pdf$/i, '').toLowerCase();
+  const sok = 'from:' + KONFIG.WFD_ADRESSE + ' has:attachment filename:pdf {subject:Invitasjon subject:Invitation} after:' + KONFIG.HISTORIKK_FRA_DATO;
+  for (const t of GmailApp.search(sok, 0, 20)) {
+    for (const m of t.getMessages()) {
+      const vedlegg = m.getAttachments().filter(a => a.getName().toLowerCase().indexOf(prefiks) === 0);
+      if (vedlegg.length) return vedlegg[0].copyBlob().setName(vedlegg[0].getName());
+    }
+  }
+  return null;
+}
+
+function lagInvitasjoner() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const ark = bedriftslisteArk_(ss);
+  if (!ark) { ui.alert('Fant ikke fanen Bedriftsliste.'); return; }
+
+  const kandidater = invitasjonsKandidater_(ark);
+  if (!kandidater.length) {
+    ui.alert('Alle bedrifter på listen som vi har e-post til, er allerede kontaktet i høst (eller har et utkast). 🎉\n\n' +
+      'Tips: Kjør «Oppdater Bedriftsliste fra Gmail» først hvis listen ikke er oppdatert.');
+    return;
+  }
+  const svar = ui.alert('Lag invitasjonsutkast',
+    kandidater.length + ' bedrifter er ikke kontaktet i høst, men vi har e-postadressen:\n\n• ' +
+    kandidater.map(k => k.bedrift + '  (' + k.epost + ')').join('\n• ') +
+    '\n\nDet lages et utkast med invitasjons-PDF til hver av dem i Gmail. Ingenting sendes – du ser over og sender selv. Fortsette?',
+    ui.ButtonSet.YES_NO);
+  if (svar !== ui.Button.YES) return;
+
+  const uten = utenKontaktperson_(ark);
+  const pdfNo = hentInvitasjonsPdf_(KONFIG.INVITASJON_PDF_NO);
+  const pdfEn = hentInvitasjonsPdf_(KONFIG.INVITASJON_PDF_EN);
+  const fra = GmailApp.getAliases().map(a => a.toLowerCase()).indexOf(KONFIG.WFD_ADRESSE.toLowerCase()) >= 0 ? KONFIG.WFD_ADRESSE : null;
+  const start = Date.now();
+  let laget = 0;
+  const igjen = [];
+  kandidater.forEach(k => {
+    if (Date.now() - start > MAKS_KJORETID_MS) { igjen.push(k.bedrift); return; }
+    const norsk = /\.no$/.test(k.epost);
+    const fornavn = fornavnFraEpost_(k.epost);
+    const hilsen = norsk ? (fornavn ? 'Hei ' + fornavn : 'Hei') : (fornavn ? 'Hi ' + fornavn : 'Hi');
+    const tekst = (norsk ? KONFIG.INVITASJON_NO : KONFIG.INVITASJON_EN)
+      .replace(/\{navn\}/g, hilsen).replace(/\{bedrift\}/g, k.bedrift);
+    const kropp = tekst + '\n' + (norsk ? KONFIG.SIGNATUR : KONFIG.SIGNATUR_EN).replace(/^\n+/, '\n');
+    const valg = {};
+    const pdf = norsk ? (pdfNo || pdfEn) : (pdfEn || pdfNo);
+    if (pdf) valg.attachments = [pdf];
+    if (fra) valg.from = fra;
+    GmailApp.createDraft(k.epost, norsk ? KONFIG.INVITASJON_EMNE_NO : KONFIG.INVITASJON_EMNE_EN, kropp, valg);
+    laget++;
+  });
+
+  ui.alert(laget + ' invitasjonsutkast ligger nå under «Utkast» i Gmail.' +
+    (pdfNo || pdfEn ? '' : '\n\nMerk: Fant ikke invitasjons-PDF-en i sendt e-post, så den må legges ved manuelt.') +
+    (igjen.length ? '\n\nTiden gikk ut før disse – kjør menyvalget én gang til:\n• ' + igjen.join('\n• ') : '') +
+    '\n\nSe over, legg gjerne til en personlig setning, og send. Arket oppdateres automatisk når de er sendt.' +
+    (uten.length ? '\n\nDisse er heller ikke kontaktet, men vi mangler e-post (finn en kontaktperson og skriv adressen i ' +
+      '«' + BL_KOLONNER.epost + '»):\n• ' + uten.join('\n• ') : ''));
+}
+
+/** Bedrifter på listen uten e-post som heller ikke er kontaktet i høst – disse må du finne kontaktperson til. */
+function utenKontaktperson_(ark) {
+  const kol = sikreBlKolonner_(ark);
+  const antall = Math.max(ark.getLastRow() - 1, 0);
+  if (!antall) return [];
+  const verdier = ark.getRange(2, 1, antall, ark.getLastColumn()).getValues();
+  const fet = ark.getRange(2, 1, antall, 1).getFontWeights().map(r => r[0] === 'bold');
+  return verdier.filter((r, i) => String(r[0]).trim() && !fet[i] && !r[kol.epost] && !r[kol.host]).map(r => String(r[0]).trim());
 }

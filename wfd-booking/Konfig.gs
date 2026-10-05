@@ -36,6 +36,62 @@ Head of Booking
 Women's Finance Day
 +47 911 59 679 | wfd.booking@nhhs.no`,
 
+  // --- Invitasjoner (menyvalget «Lag invitasjoner til de som ikke er kontaktet») ---
+  // {navn} = «Hei Helene» / «Hei» (fornavn fra e-postadressen når det går), {bedrift} = bedriftsnavnet.
+  // Norsk brukes til .no-adresser, engelsk ellers. PDF-en hentes fra en invitasjon du allerede har sendt.
+  INVITASJON_EMNE_NO: "Invitasjon til Women's Finance Day ved Norges Handelshøyskole 2027",
+  INVITASJON_EMNE_EN: 'Invitation to Women’s Finance Day 2027 at NHH',
+  INVITASJON_PDF_NO: 'WFD_2027_NO.pdf',
+  INVITASJON_PDF_EN: 'WFD_2027_ENG',
+  INVITASJON_NO: `{navn},
+
+Vi har gleden av å invitere {bedrift} til Women’s Finance Day 2027 ved NHH.
+
+Women’s Finance Day samler kvinnelige NHH-studenter og finansbransjen. Arrangementet arrangeres av Næringslivsutvalget, Finansgruppen og Femme Forvaltning ved NHH. Målet er å inspirere flere kvinner til en karriere innen finans, samtidig som samarbeidspartnerne får møte dyktige studenter og styrke sin synlighet som arbeidsgiver.
+
+WFD 2026 ble en stor suksess. Studentpåmeldingen ble fulltegnet på under ett minutt, med over 100 studenter på venteliste. I etterkant oppga 84 prosent av respondentene at WFD i stor grad hadde økt interessen deres for finans.
+
+Gjennom stands, foredrag, paneldebatt, workshops og nettverksaktiviteter får samarbeidspartnerne møte studentene både bredt og i mindre, faglig orienterte grupper. Premium-partnere kan i tillegg arrangere en egen nettverksøkt i forbindelse med WFD eller WFP, samt promotere internship- og graduate-stillinger gjennom våre kanaler.
+
+Datoene for 2027 er:
+
+• Women’s Finance Program: onsdag 3. mars
+• Women’s Finance Day: torsdag 4. mars
+
+I den vedlagte invitasjonen finner dere mer informasjon om årets samarbeidsmuligheter, pakker og priser.
+
+Dersom dere ønsker å delta, svar gjerne på denne e-posten innen fredag 16. oktober. Gi også beskjed dersom invitasjonen bør sendes til en annen person.
+
+Vi håper å ønske {bedrift} velkommen til WFD 2027!`,
+  INVITASJON_EN: `{navn},
+
+We would be delighted to invite {bedrift} to Women’s Finance Day at NHH in Bergen next March.
+
+Women’s Finance Day brings together female NHH students and the finance industry. The event is organised by the Business Committee, the Finance Group and Femme Forvaltning at NHH. Our aim is to inspire more women to explore careers in finance, while giving our partners the opportunity to meet talented students and strengthen their visibility as employers.
+
+Our workshops and main programme are exclusively for female students, while the company stands are open to all NHH students.
+
+In 2026, all student places were filled in less than one minute, with more than 100 students joining the waiting list. After the event, 84% of respondents said that WFD had significantly increased their interest in finance.
+
+Through company stands, presentations, panel discussions, workshops and networking activities, our partners can meet students both broadly and in smaller, professionally focused groups. Premium partners may also host a separate networking session, promote internship and graduate opportunities through our channels, and organise a workshop during WFD or the Women’s Finance Program.
+
+The dates for 2027 are:
+
+• Women’s Finance Program: Wednesday, 3 March
+• Women’s Finance Day: Thursday, 4 March
+
+Please find attached an invitation with further information about the partnership opportunities, packages and prices.
+
+If {bedrift} would like to participate, please reply by Friday, 16 October. Please also feel free to forward the invitation to the relevant colleague if someone else is responsible for partnerships or recruitment activities.
+
+We hope to welcome {bedrift} to Women’s Finance Day 2027!`,
+  SIGNATUR_EN: `
+Best regards,
+Ellinor Hangerhagen
+Head of Booking
+Women’s Finance Day
++47 911 59 679 | wfd.booking@nhhs.no`,
+
   // Tone og stil i svarene.
   TONE: 'Profesjonell, vennlig og kortfattet. Svar på samme språk som bedriften skrev på (norsk eller engelsk). Avslutt med et tydelig neste steg.',
 

@@ -191,3 +191,132 @@ function sisteEpostOm_(bedrift, periode) {
   });
   return best;
 }
+
+// ---------------------------------------------------------------------------
+// Invitasjonsutkast til bedrifter på Bedriftsliste som ikke er kontaktet i høst
+// ---------------------------------------------------------------------------
+
+const GENERISKE_ADRESSER = ['post', 'info', 'hr', 'kontakt', 'contact', 'mail', 'office', 'firmapost', 'recruitment',
+  'rekruttering', 'careers', 'career', 'talent', 'jobs', 'campus', 'admin', 'hello', 'hei', 'events', 'marketing'];
+
+/** «helene.wekre@…» → «Helene». Tom tekst når adressen ikke ser ut som et navn. */
+function fornavnFraEpost_(epost) {
+  const lokal = String(epost).split('@')[0].toLowerCase();
+  const forste = lokal.split(/[._-]/)[0];
+  if (!/^[a-zæøåäöé]{3,}$/.test(forste) || GENERISKE_ADRESSER.indexOf(forste) >= 0) return '';
+  if (lokal.indexOf('.') < 0 && lokal.indexOf('_') < 0 && lokal.indexOf('-') < 0 && forste.length <= 4) return ''; // «haha@», «ss@»
+  return forste.charAt(0).toUpperCase() + forste.slice(1);
+}
+
+/** Bedrifter i Booking som allerede er invitert eller i dialog (normaliserte navn). */
+function alleredeInvitertIBooking_() {
+  const ut = {};
+  try {
+    const tabell = lesBedrifter_();
+    const sp = KONFIG.SPEIL || {};
+    const inv = tabell.alle[sp.invitasjonSendt];
+    tabell.rader.forEach((r, i) => {
+      const status = String(celle_(tabell, i, 'status'));
+      const sendt = inv !== undefined && String(r[inv]).toLowerCase() === String(sp.ja || 'Ja').toLowerCase();
+      if (sendt || (status && status !== KONFIG.STATUSER[0])) ut[normaliserNavn_(sokeNavn_(celle_(tabell, i, 'bedrift')))] = true;
+    });
+  } catch (e) { /* ingen booking-fane valgt ennå */ }
+  return ut;
+}
+
+/** Finner kandidatene: ikke kontaktet i høst, har e-post, ikke invitert i Booking, ingen utkast fra før. */
+function invitasjonsKandidater_(ark) {
+  const kol = sikreBlKolonner_(ark);
+  const antall = Math.max(ark.getLastRow() - 1, 0);
+  if (!antall) return [];
+  const verdier = ark.getRange(2, 1, antall, ark.getLastColumn()).getValues();
+  const fet = ark.getRange(2, 1, antall, 1).getFontWeights().map(r => r[0] === 'bold');
+  const iBooking = alleredeInvitertIBooking_();
+  const utkastTil = {};
+  GmailApp.getDrafts().forEach(d => {
+    try { tolkAdresser_(d.getMessage().getTo()).forEach(a => { utkastTil[a.epost] = true; }); } catch (e) { /* hopp over */ }
+  });
+  const ut = [];
+  verdier.forEach((r, i) => {
+    const bedrift = String(r[0]).trim();
+    const epost = String(r[kol.epost]).trim().toLowerCase();
+    if (!bedrift || fet[i] || !epost || r[kol.host]) return;
+    if (iBooking[normaliserNavn_(sokeNavn_(bedrift))]) return;
+    if (utkastTil[epost]) return;
+    ut.push({ rad: i + 2, bedrift: sokeNavn_(bedrift), epost, tidligere: r[kol.tidligere] });
+  });
+  return ut;
+}
+
+/** Henter invitasjons-PDF-en fra en invitasjon du har sendt tidligere (filnavnet må begynne med «filnavn»). */
+function hentInvitasjonsPdf_(filnavn) {
+  const prefiks = filnavn.replace(/\.pdf$/i, '').toLowerCase();
+  const sok = 'from:' + KONFIG.WFD_ADRESSE + ' has:attachment filename:pdf {subject:Invitasjon subject:Invitation} after:' + KONFIG.HISTORIKK_FRA_DATO;
+  for (const t of GmailApp.search(sok, 0, 20)) {
+    for (const m of t.getMessages()) {
+      const vedlegg = m.getAttachments().filter(a => a.getName().toLowerCase().indexOf(prefiks) === 0);
+      if (vedlegg.length) return vedlegg[0].copyBlob().setName(vedlegg[0].getName());
+    }
+  }
+  return null;
+}
+
+function lagInvitasjoner() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const ark = bedriftslisteArk_(ss);
+  if (!ark) { ui.alert('Fant ikke fanen Bedriftsliste.'); return; }
+
+  const kandidater = invitasjonsKandidater_(ark);
+  if (!kandidater.length) {
+    ui.alert('Alle bedrifter på listen som vi har e-post til, er allerede kontaktet i høst (eller har et utkast). 🎉\n\n' +
+      'Tips: Kjør «Oppdater Bedriftsliste fra Gmail» først hvis listen ikke er oppdatert.');
+    return;
+  }
+  const svar = ui.alert('Lag invitasjonsutkast',
+    kandidater.length + ' bedrifter er ikke kontaktet i høst, men vi har e-postadressen:\n\n• ' +
+    kandidater.map(k => k.bedrift + '  (' + k.epost + ')').join('\n• ') +
+    '\n\nDet lages et utkast med invitasjons-PDF til hver av dem i Gmail. Ingenting sendes – du ser over og sender selv. Fortsette?',
+    ui.ButtonSet.YES_NO);
+  if (svar !== ui.Button.YES) return;
+
+  const uten = utenKontaktperson_(ark);
+  const pdfNo = hentInvitasjonsPdf_(KONFIG.INVITASJON_PDF_NO);
+  const pdfEn = hentInvitasjonsPdf_(KONFIG.INVITASJON_PDF_EN);
+  const fra = GmailApp.getAliases().map(a => a.toLowerCase()).indexOf(KONFIG.WFD_ADRESSE.toLowerCase()) >= 0 ? KONFIG.WFD_ADRESSE : null;
+  const start = Date.now();
+  let laget = 0;
+  const igjen = [];
+  kandidater.forEach(k => {
+    if (Date.now() - start > MAKS_KJORETID_MS) { igjen.push(k.bedrift); return; }
+    const norsk = /\.no$/.test(k.epost);
+    const fornavn = fornavnFraEpost_(k.epost);
+    const hilsen = norsk ? (fornavn ? 'Hei ' + fornavn : 'Hei') : (fornavn ? 'Hi ' + fornavn : 'Hi');
+    const tekst = (norsk ? KONFIG.INVITASJON_NO : KONFIG.INVITASJON_EN)
+      .replace(/\{navn\}/g, hilsen).replace(/\{bedrift\}/g, k.bedrift);
+    const kropp = tekst + '\n' + (norsk ? KONFIG.SIGNATUR : KONFIG.SIGNATUR_EN).replace(/^\n+/, '\n');
+    const valg = {};
+    const pdf = norsk ? (pdfNo || pdfEn) : (pdfEn || pdfNo);
+    if (pdf) valg.attachments = [pdf];
+    if (fra) valg.from = fra;
+    GmailApp.createDraft(k.epost, norsk ? KONFIG.INVITASJON_EMNE_NO : KONFIG.INVITASJON_EMNE_EN, kropp, valg);
+    laget++;
+  });
+
+  ui.alert(laget + ' invitasjonsutkast ligger nå under «Utkast» i Gmail.' +
+    (pdfNo || pdfEn ? '' : '\n\nMerk: Fant ikke invitasjons-PDF-en i sendt e-post, så den må legges ved manuelt.') +
+    (igjen.length ? '\n\nTiden gikk ut før disse – kjør menyvalget én gang til:\n• ' + igjen.join('\n• ') : '') +
+    '\n\nSe over, legg gjerne til en personlig setning, og send. Arket oppdateres automatisk når de er sendt.' +
+    (uten.length ? '\n\nDisse er heller ikke kontaktet, men vi mangler e-post (finn en kontaktperson og skriv adressen i ' +
+      '«' + BL_KOLONNER.epost + '»):\n• ' + uten.join('\n• ') : ''));
+}
+
+/** Bedrifter på listen uten e-post som heller ikke er kontaktet i høst – disse må du finne kontaktperson til. */
+function utenKontaktperson_(ark) {
+  const kol = sikreBlKolonner_(ark);
+  const antall = Math.max(ark.getLastRow() - 1, 0);
+  if (!antall) return [];
+  const verdier = ark.getRange(2, 1, antall, ark.getLastColumn()).getValues();
+  const fet = ark.getRange(2, 1, antall, 1).getFontWeights().map(r => r[0] === 'bold');
+  return verdier.filter((r, i) => String(r[0]).trim() && !fet[i] && !r[kol.epost] && !r[kol.host]).map(r => String(r[0]).trim());
+}
