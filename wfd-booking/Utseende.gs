@@ -62,6 +62,11 @@ function ryddArbeidsbok() {
     plan.push('Fanen «' + f.fra + '» får navnet «' + f.til + '»' +
       (f.overskrifter ? ' (overskrifter: ' + Object.keys(f.overskrifter).map(k => k + ' → ' + f.overskrifter[k]).join(', ') + ')' : ''));
   });
+  const tommeKol = tommeKolonner_(tabell);
+  if (tommeKol.length) {
+    plan.push('Tomme kolonner mellom tabellen din og systemkolonnene slettes: ' +
+      tommeKol.map(k => kolonneBokstav_(k)).join(', '));
+  }
   plan.push('Systemkolonnene i booking-tabellen får farger, bredder og statusfarger. Domene og Tråd-ID skjules');
   plan.push('Oversikt blir et dashbord, «' + KONFIG.ARK_FJOR + '» sammenligner med fjoråret, og Logg får en ryddig tabell');
   plan.push('Fanene sorteres: Oversikt, ' + KONFIG.ARK_IKKE_KONTAKTET + ', ' + KONFIG.ARK_FJOR + ', ' + KONFIG.ARK_BEDRIFTSOVERSIKT + ', Booking, Bedriftsliste, Logg');
@@ -97,6 +102,9 @@ function ryddArbeidsbok() {
     stilEnkelListe_(ark);
   });
 
+  // Tomme kolonner: slett fra høyre mot venstre så numrene ikke forskyves underveis.
+  tommeKol.slice().sort((a, b) => b - a).forEach(k => bookingArk.deleteColumn(k));
+
   // 3. Utseende
   tabell = plasserPakkeKolonne_(lesBedrifter_());
   stilAlleFaner_(ss, tabell);
@@ -117,6 +125,30 @@ function ryddArbeidsbok() {
 
   ss.setActiveSheet(ss.getSheetByName(KONFIG.ARK_OVERSIKT));
   ui.alert('Ferdig!' + (feil.length ? '\n\nMerk:\n' + feil.join('\n') : ''));
+}
+
+/**
+ * Kolonner i booking-fanen som er helt tomme (også overskriften) og ligger før den første systemkolonnen,
+ * f.eks. et mellomrom mellom tabellen din og Status. Returnerer kolonnenumre (1-basert).
+ */
+function tommeKolonner_(tabell) {
+  const ark = tabell.ark;
+  const system = systemKolonner_(tabell).map(n => tabell.kol[n] + 1);
+  if (!system.length) return [];
+  const forsteSystem = Math.min.apply(null, system);
+  const hoyde = Math.max(ark.getLastRow(), 1);
+  const verdier = ark.getRange(1, 1, hoyde, forsteSystem - 1 || 1).getValues();
+  const ut = [];
+  for (let k = 1; k < forsteSystem; k++) {
+    if (verdier.every(rad => rad[k - 1] === '' || rad[k - 1] === null)) ut.push(k);
+  }
+  return ut;
+}
+
+function kolonneBokstav_(k) {
+  let s = '';
+  while (k > 0) { const r = (k - 1) % 26; s = String.fromCharCode(65 + r) + s; k = Math.floor((k - 1) / 26); }
+  return s;
 }
 
 function sorterFaner_(ss, tabell) {
