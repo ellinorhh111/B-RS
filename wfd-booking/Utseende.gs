@@ -532,7 +532,7 @@ function lagOversikt_(ss, tabell) {
   });
   const total = ark.getRange(sist + 1, 2, 1, 2);
   total.merge();
-  total.getCell(1, 1).setValue('Bedrifter totalt');
+  total.getCell(1, 1).setValue('Rader i Booking (alle statuser)');
   total.setFontColor(FARGE.dempet);
   ark.getRange(sist + 1, 4).setFormula(`=COUNTA(${omr('bedrift')})`).setFontColor(FARGE.dempet).setHorizontalAlignment('center');
 
