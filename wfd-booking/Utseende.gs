@@ -230,6 +230,13 @@ function stilBooking_(tabell) {
     .setFontColor('#9CA3AF').setRanges([svarOmr]).build());
   ark.setConditionalFormatRules(beholdes.concat(nye));
 
+  // Lik skrift og radhøyde på alle bedriftsradene (farger og innhold røres ikke).
+  const antall = ark.getLastRow() - 1;
+  if (antall > 0) {
+    ark.getRange(2, 1, antall, ark.getLastColumn()).setFontSize(10).setFontFamily('Arial');
+    ark.setRowHeights(2, antall, 24);
+  }
+
   ark.setFrozenRows(1);
   try { ark.setFrozenColumns(1); } catch (e) { /* tabeller kan nekte; ikke viktig */ }
 }

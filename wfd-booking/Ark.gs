@@ -134,15 +134,12 @@ function finnRad_(tabell, motpart, bedriftsnavn) {
       if (e && e.indexOf('@' + motpart.domene) >= 0) return i;
     }
   }
-  // Domenet ligner bedriftsnavnet: nbim.no → «NBIM (Premium)», dnb.no → «DNB Carnegie».
+  // Domenet ligner bedriftsnavnet: nbim.no → «NBIM (Premium)», dnb.no → «DNB Carnegie», eqtpartners.com → «EQT (Partner)»,
+  // odinfond.no → «Odin Forvaltning».
   if (!motpart.privat && motpart.domene) {
-    const stamme = normaliserNavn_(motpart.domene.split('.').slice(-2, -1)[0]);
-    if (stamme.length >= 3) {
-      for (let i = 0; i < tabell.rader.length; i++) {
-        const n = normaliserNavn_(celle_(tabell, i, 'bedrift'));
-        // nbim.no → «NBIM», dnb.no → «DNB Carnegie», paretosec.com → «Pareto»
-        if (n && (n === stamme || n.indexOf(stamme) === 0 || (n.length >= 4 && stamme.indexOf(n) === 0))) return i;
-      }
+    for (let i = 0; i < tabell.rader.length; i++) {
+      const b = celle_(tabell, i, 'bedrift');
+      if (b && domeneLignerNavn_(motpart.domene, b)) return i;
     }
   }
   const navn = normaliserNavn_(bedriftsnavn);
