@@ -382,8 +382,23 @@ function stilBooking_(tabell) {
   }
   ark.getRange(1, 1, 1, ark.getLastColumn()).setFontFamily(skrift).setFontSize(storrelse);
 
-  // Annenhver rad lys grå i systemkolonnene, som i tabellen din.
+  // Én stil over hele fanen: overskrift, annenhver rad og filterknapper på alle kolonnene. Er bedriftene i en
+  // Google-«tabell» (f.eks. Table2), har den sin egen stil og egne filterknapper; da får bare systemkolonnene stilen.
+  let helFane = false;
   try {
+    ark.getBandings().forEach(b => b.remove());
+    ark.getRange(1, 1, Math.max(ark.getLastRow(), 2), ark.getLastColumn())
+      .applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false)
+      .setHeaderRowColor(hodeFarge).setFirstRowColor('#FFFFFF').setSecondRowColor('#F8F9FA');
+    ark.getRange(1, 1, 1, ark.getLastColumn()).setBackground(hodeFarge).setFontColor(FARGE.hvit).setFontWeight('bold')
+      .setVerticalAlignment('middle');
+    ark.setRowHeight(1, 32);
+    if (!ark.getFilter()) ark.getRange(1, 1, Math.max(ark.getLastRow(), 2), ark.getLastColumn()).createFilter();
+    helFane = true;
+  } catch (e) {
+    console.warn('Booking som én tabell: ' + e.message);
+  }
+  if (!helFane) try {
     const forsteSys = Math.min.apply(null, systemKolonner_(tabell).map(kol));
     const bredde = ark.getLastColumn() - forsteSys + 1;
     ark.getBandings().forEach(b => { if (b.getRange().getColumn() >= forsteSys) b.remove(); });

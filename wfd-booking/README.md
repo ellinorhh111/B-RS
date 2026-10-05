@@ -164,6 +164,21 @@ Kontakter hentet fra nettet (oransje) tas ikke med før du har sjekket dem og sk
 Norsk tekst til .no-adresser, engelsk ellers. Tekstene ligger i `KONFIG.INVITASJON_NO` / `INVITASJON_EN`. Ingenting
 sendes automatisk. Til slutt får du en liste over bedrifter som heller ikke er kontaktet, men som mangler e-post.
 
+## Svar fra bedriftene: ja, nei eller «vi sjekker»
+
+Skriptet leser bedriftens siste e-post og ser etter tydelige formuleringer, uten AI og uten kostnad:
+
+| Bedriften skriver f.eks. | Status blir |
+|---|---|
+| «dessverre ikke mulighet», «må takke nei», «passer ikke», «unfortunately», «tyvärr» | **Takket nei** |
+| «vi blir gjerne med», «melder oss på», «ønsker å delta» | **Interessert** |
+| det samme + «Premium partner» / «som partner» | **Bekreftet** (og Pakke 2027 fylles ut) |
+| «sjekker internt», spørsmål, alt annet | **I dialog** |
+
+Siste hendelse får «(tolket automatisk – sjekk)», og Neste steg sier hva du bør gjøre. Et «nei» vinner over et «ja».
+Er tolkningen feil, endrer du Status selv – det du skriver, flyttes ikke bakover av systemet.
+**WFD → Les svarene og oppdater status (ja/nei)** tolker svar som kom før dette fantes.
+
 ## Slik bruker du det i hverdagen
 
 * **På mobilen:** Åpne Gmail og etiketten **WFD/Svar klart**. Hver tråd der har et ferdig utkast. Les gjennom,

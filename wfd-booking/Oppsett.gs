@@ -9,6 +9,7 @@ function onOpen() {
     .addItem('3. Importer historikk fra Gmail', 'importerHistorikk')
     .addSeparator()
     .addItem('Sjekk innboksen nå', 'sjekkInnboksFraMeny')
+    .addItem('Les svarene og oppdater status (ja/nei)', 'lesSvarPaNytt')
     .addItem('Lag purreutkast', 'lagPurreutkast')
     .addItem('Send oppsummering nå', 'dagligOppsummering')
     .addSeparator()

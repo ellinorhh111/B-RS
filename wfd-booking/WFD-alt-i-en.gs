@@ -959,8 +959,13 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
 
   // ---- Status og felter ----
   let foreslatt;
+  // Uten AI: les bedriftens siste e-post etter tydelige ja/nei-formuleringer.
+  const sisteDeres = alle.filter(m => !erFraOss_(m)).pop();
+  const tolket = !analyse && sisteDeres ? tolkSvarUtenAI_(rensTekst_(sisteDeres.getPlainBody())) : null;
   if (analyse) {
     foreslatt = analyse.status;
+  } else if (tolket) {
+    foreslatt = tolket.status;
   } else if (nyeFraDem || alle.some(m => !erFraOss_(m))) {
     foreslatt = 'I dialog';
   } else {
@@ -992,7 +997,8 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   settCelle_(tabell, rad, 'antall', (Number(celle_(tabell, rad, 'antall')) || 0) + nye.length);
 
   // ---- «Hvor står vi nå» – bare hvis denne tråden er den nyeste kontakten ----
-  const oppsummering = analyse ? analyse.oppsummering : enkelOppsummering_(siste);
+  const oppsummering = analyse ? analyse.oppsummering
+    : (tolket && sisteFraDem ? tolket.tekst + ' (tolket automatisk – sjekk) · ' : '') + enkelOppsummering_(siste);
   if (erNyest) {
     settCelle_(tabell, rad, 'sistKontakt', siste.getDate());
     settCelle_(tabell, rad, 'retning', sisteFraDem ? 'Bedriften' : 'Oss');
@@ -1001,6 +1007,7 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
     settCelle_(tabell, rad, 'trengerSvar', sisteFraDem && fersk && (!analyse || analyse.trenger_svar) ? 'Ja' : 'Nei');
     settCelle_(tabell, rad, 'oppsummering', oppsummering);
     if (analyse && analyse.neste_steg) settCelle_(tabell, rad, 'nesteSteg', analyse.neste_steg);
+    else if (tolket && sisteFraDem) settCelle_(tabell, rad, 'nesteSteg', NESTE_STEG_ETTER_SVAR[tolket.status] || '');
     else if (!sisteFraDem) settCelle_(tabell, rad, 'nesteSteg', 'Vent på svar – purr etter ' + KONFIG.PURR_ETTER_DAGER + ' dager');
     if (analyse && /^\d{4}-\d{2}-\d{2}$/.test(analyse.oppfolging_dato)) {
       const [a, m, d] = analyse.oppfolging_dato.split('-').map(Number);
@@ -1049,6 +1056,42 @@ function radSomObjekt_(tabell, rad) {
     o[h] = v;
   });
   return o;
+}
+
+/**
+ * Gratis tolkning av svar uten AI: ser etter tydelige formuleringer i bedriftens siste e-post.
+ * Returnerer { status, tekst } eller null hvis svaret ikke er tydelig (da blir status «I dialog»).
+ * Bevisst forsiktig: et «nei» vinner over et «ja» («vi skulle gjerne vært med, men har dessverre ikke mulighet»).
+ */
+const SVAR_NEI = new RegExp([
+  'takk(er|e)? nei', 'm[åa] (dessverre |nok )?(takke|si) nei', 'dessverre[^.!?]{0,80}\\b(ikke|ingen|vanskelig)\\b',
+  '\\bikke (anledning|mulighet|kapasitet)', 'passer (dessverre |nok )?ikke', 'blir (nok |litt |dessverre )?(for )?vanskelig', 'vanskelig [åa] f[åa] (det )?til',
+  'kan (dessverre |nok )?ikke (delta|stille|v[æa]re med)', '\\bavst[åa]r\\b', 'ikke (prioritere|delta i [åa]r)',
+  'unfortunately', 'not be able to', 'unable to (join|attend|participate)', "won'?t be (able|joining|participating)",
+  'will have to (decline|pass)', 'decline', 'not (participate|join|attend)', 'too far', 'tyv[äa]rr', 'inte (delta|m[öo]jlighet)',
+].join('|'), 'i');
+const SVAR_JA = new RegExp([
+  'blir (gjerne|veldig gjerne|selvf[øo]lgelig) med', 'melder oss (gjerne )?p[åa]', '(vil|vi) (gjerne|selvf[øo]lgelig) (v[æa]re med|delta|stille)',
+  '[øo]nsker (gjerne )?[åa] (delta|stille|v[æa]re med)', 'vi deltar', 'bekrefter (v[åa]r )?deltakelse', 'vil v[æa]re med',
+  'v[æa]re med p[åa] dette', "we('d| would)? (love|be happy|be glad) to (join|participate|attend)", 'count us in',
+  'happy to (join|participate)', 'we confirm', 'g[äa]rna (med|delta)',
+].join('|'), 'i');
+
+const NESTE_STEG_ETTER_SVAR = {
+  'Takket nei': 'Send en kort takk, og spør om dere kan ta kontakt neste år',
+  'Interessert': 'Bekreft plassen og avklar pakke (Premium partner / Partner)',
+  'Bekreftet': 'Bekreft og send praktisk info',
+};
+
+function tolkSvarUtenAI_(tekst) {
+  const t = String(tekst || '').replace(/\s+/g, ' ');
+  if (!t) return null;
+  if (SVAR_NEI.test(t)) return { status: KONFIG.STATUS_NEI, tekst: 'Takket nei' };
+  if (SVAR_JA.test(t)) {
+    const pakke = pakkeFraEpost_(t);
+    return pakke ? { status: 'Bekreftet', tekst: 'Bekreftet som ' + pakke, pakke } : { status: 'Interessert', tekst: 'Vil gjerne være med' };
+  }
+  return null;
 }
 
 function enkelOppsummering_(melding) {
@@ -1159,6 +1202,43 @@ function hentOnskerFraGmail_(tabell, maksMs) {
     if (String(celle_(tabell, i, 'onsker')) + String(celle_(tabell, i, 'pakke')) !== for_) oppdatert++;
   }
   return oppdatert;
+}
+
+
+/**
+ * Leser bedriftenes siste svar på nytt (uten AI) og oppdaterer status der svaret tydelig er et ja eller nei.
+ * For e-poster som kom før tolkningen fantes. Endrer bare fremover (unntatt «Takket nei»), og aldri låste rader.
+ */
+function lesSvarPaNytt() {
+  const ui = SpreadsheetApp.getUi();
+  const tabell = lesBedrifter_();
+  const endret = [];
+  const start = Date.now();
+  tabell.rader.forEach((r, i) => {
+    if (Date.now() - start > MAKS_KJORETID_MS) return;
+    const tradId = String(celle_(tabell, i, 'tradId')).trim();
+    const for_ = String(celle_(tabell, i, 'status'));
+    if (!tradId || erLast_(tabell, i) || for_ === KONFIG.STATUS_NEI || for_ === 'Bekreftet') return;
+    let trad;
+    try { trad = GmailApp.getThreadById(tradId); } catch (e) { return; }
+    if (!trad) return;
+    const deres = trad.getMessages().filter(m => !m.isDraft() && !erAutomatisk_(m) && !erFraOss_(m)).pop();
+    const tolket = deres ? tolkSvarUtenAI_(rensTekst_(deres.getPlainBody())) : null;
+    if (!tolket) return;
+    const etter = velgStatus_(for_, tolket.status);
+    if (etter === for_) return;
+    settCelle_(tabell, i, 'status', etter);
+    speilStatus_(tabell, i, etter);
+    if (tolket.pakke && tabell.kol.pakke !== undefined && !celle_(tabell, i, 'pakke')) settCelle_(tabell, i, 'pakke', tolket.pakke);
+    if (NESTE_STEG_ETTER_SVAR[etter]) settCelle_(tabell, i, 'nesteSteg', NESTE_STEG_ETTER_SVAR[etter]);
+    const bedrift = celle_(tabell, i, 'bedrift');
+    loggHendelse_([new Date(), bedrift, 'Fra bedriften', deres.getFrom(), deres.getSubject(),
+      tolket.tekst + ' (tolket automatisk – sjekk)', for_, etter, tradUrl_(tradId)]);
+    endret.push(bedrift + ': ' + for_ + ' → ' + etter);
+  });
+  ui.alert(endret.length
+    ? 'Status ble oppdatert ut fra svarene (sjekk gjerne):\n\n• ' + endret.join('\n• ')
+    : 'Fant ingen tydelige ja- eller nei-svar som ikke allerede står i Booking.');
 }
 
 // ===================== Historikk.gs =====================
@@ -1362,6 +1442,7 @@ function onOpen() {
     .addItem('3. Importer historikk fra Gmail', 'importerHistorikk')
     .addSeparator()
     .addItem('Sjekk innboksen nå', 'sjekkInnboksFraMeny')
+    .addItem('Les svarene og oppdater status (ja/nei)', 'lesSvarPaNytt')
     .addItem('Lag purreutkast', 'lagPurreutkast')
     .addItem('Send oppsummering nå', 'dagligOppsummering')
     .addSeparator()
@@ -1957,8 +2038,23 @@ function stilBooking_(tabell) {
   }
   ark.getRange(1, 1, 1, ark.getLastColumn()).setFontFamily(skrift).setFontSize(storrelse);
 
-  // Annenhver rad lys grå i systemkolonnene, som i tabellen din.
+  // Én stil over hele fanen: overskrift, annenhver rad og filterknapper på alle kolonnene. Er bedriftene i en
+  // Google-«tabell» (f.eks. Table2), har den sin egen stil og egne filterknapper; da får bare systemkolonnene stilen.
+  let helFane = false;
   try {
+    ark.getBandings().forEach(b => b.remove());
+    ark.getRange(1, 1, Math.max(ark.getLastRow(), 2), ark.getLastColumn())
+      .applyRowBanding(SpreadsheetApp.BandingTheme.LIGHT_GREY, true, false)
+      .setHeaderRowColor(hodeFarge).setFirstRowColor('#FFFFFF').setSecondRowColor('#F8F9FA');
+    ark.getRange(1, 1, 1, ark.getLastColumn()).setBackground(hodeFarge).setFontColor(FARGE.hvit).setFontWeight('bold')
+      .setVerticalAlignment('middle');
+    ark.setRowHeight(1, 32);
+    if (!ark.getFilter()) ark.getRange(1, 1, Math.max(ark.getLastRow(), 2), ark.getLastColumn()).createFilter();
+    helFane = true;
+  } catch (e) {
+    console.warn('Booking som én tabell: ' + e.message);
+  }
+  if (!helFane) try {
     const forsteSys = Math.min.apply(null, systemKolonner_(tabell).map(kol));
     const bredde = ark.getLastColumn() - forsteSys + 1;
     ark.getBandings().forEach(b => { if (b.getRange().getColumn() >= forsteSys) b.remove(); });
