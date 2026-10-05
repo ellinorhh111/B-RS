@@ -196,6 +196,11 @@ Women’s Finance Day
     venter: 'venter',
   },
 
+  // Kolonner i Booking som skjules av «Gjør arbeidsboken ryddig og pen» fordi Status (og Trenger svar) viser det samme.
+  // Før de skjules, får Status med det du har skrevet der. De oppdateres fortsatt i bakgrunnen.
+  // Vis en igjen: marker kolonnene rundt, høyreklikk → «Vis kolonner». Sett til [] for å vise alt.
+  SKJUL_I_BOOKING: ['Invitasjon sendt', 'Respons', 'Med', 'Siste e-post fra', 'Utkast laget', 'Lås'],
+
   // Statusene i rekkefølge. Systemet flytter aldri en bedrift bakover i listen
   // (unntak: «Takket nei»). Endrer du navnene her, gjør det før «Sett opp arket».
   STATUSER: ['Ikke kontaktet', 'Kontaktet', 'Purret', 'I dialog', 'Interessert', 'Tilbud sendt', 'Bekreftet'],

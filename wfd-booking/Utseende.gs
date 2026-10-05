@@ -67,7 +67,13 @@ function ryddArbeidsbok() {
     plan.push('Tomme kolonner mellom tabellen din og systemkolonnene slettes: ' +
       tommeKol.map(k => kolonneBokstav_(k)).join(', '));
   }
-  plan.push('Systemkolonnene i booking-tabellen får farger, bredder og statusfarger. Domene og Tråd-ID skjules');
+  const skjul = (KONFIG.SKJUL_I_BOOKING || []).filter(n => kolonneMedNavn_(bookingArk, n) > 0);
+  if (skjul.length) {
+    plan.push('Status blir eneste statuskolonne. Først får Status med det du har skrevet i ' +
+      skjul.filter(n => Object.values(KONFIG.SPEIL || {}).indexOf(n) >= 0).map(n => '«' + n + '»').join(', ') +
+      '. Deretter skjules ' + skjul.map(n => '«' + n + '»').join(', ') + ' (de slettes ikke)');
+  }
+  plan.push('Systemkolonnene får samme skrift og overskriftsfarge som tabellen din. Domene og Tråd-ID skjules');
   plan.push('Oversikt blir et dashbord, «' + KONFIG.ARK_FJOR + '» sammenligner med fjoråret, og Logg får en ryddig tabell');
   plan.push('Fanene sorteres: Oversikt, ' + KONFIG.ARK_IKKE_KONTAKTET + ', ' + KONFIG.ARK_FJOR + ', ' + KONFIG.ARK_BEDRIFTSOVERSIKT + ', Booking, Bedriftsliste, Logg');
 
@@ -105,11 +111,18 @@ function ryddArbeidsbok() {
   // Tomme kolonner: slett fra høyre mot venstre så numrene ikke forskyves underveis.
   tommeKol.slice().sort((a, b) => b - a).forEach(k => bookingArk.deleteColumn(k));
 
-  // 3. Utseende
+  // 3. Status som eneste statuskolonne
+  const oppdatertStatus = skjul.length ? synkStatusFraEgneKolonner_(lesBedrifter_()) : 0;
+
+  // 4. Utseende
   tabell = plasserPakkeKolonne_(lesBedrifter_());
   stilAlleFaner_(ss, tabell);
+  skjul.forEach(n => {
+    const k = kolonneMedNavn_(tabell.ark, n);
+    if (k > 0) tabell.ark.hideColumns(k);
+  });
 
-  // 4. Tomme faner: spør for seg, siden sletting ikke kan angres med Ctrl+Z.
+  // 5. Tomme faner: spør for seg, siden sletting ikke kan angres med Ctrl+Z.
   const tomme = ss.getSheets().filter(a => {
     const n = a.getName();
     if (n === tabell.ark.getName() || [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT, KONFIG.ARK_IKKE_KONTAKTET, KONFIG.ARK_TRADER].indexOf(n) >= 0) return false;
@@ -124,7 +137,8 @@ function ryddArbeidsbok() {
   }
 
   ss.setActiveSheet(ss.getSheetByName(KONFIG.ARK_OVERSIKT));
-  ui.alert('Ferdig!' + (feil.length ? '\n\nMerk:\n' + feil.join('\n') : ''));
+  ui.alert('Ferdig!' + (oppdatertStatus ? '\n\nStatus ble oppdatert på ' + oppdatertStatus + ' rader ut fra kolonnene dine.' : '') +
+    (feil.length ? '\n\nMerk:\n' + feil.join('\n') : ''));
 }
 
 /**
@@ -143,6 +157,33 @@ function tommeKolonner_(tabell) {
     if (verdier.every(rad => rad[k - 1] === '' || rad[k - 1] === null)) ut.push(k);
   }
   return ut;
+}
+
+/** Kolonnenummeret (1-basert) med denne overskriften i rad 1, eller 0. */
+function kolonneMedNavn_(ark, navn) {
+  const h = ark.getRange(1, 1, 1, Math.max(ark.getLastColumn(), 1)).getValues()[0].map(v => String(v).trim());
+  return h.indexOf(navn) + 1;
+}
+
+/**
+ * Tar med det du har skrevet i Invitasjon sendt / Respons / Med inn i Status, så Status alene er riktig
+ * før de kolonnene skjules. Flytter bare fremover, og et «Takket nei» i Status røres ikke.
+ */
+function synkStatusFraEgneKolonner_(tabell) {
+  let antall = 0;
+  tabell.rader.forEach((r, i) => {
+    if (!String(celle_(tabell, i, 'bedrift')).trim()) return;
+    const gammel = String(celle_(tabell, i, 'status')).trim();
+    if (gammel === KONFIG.STATUS_NEI) return;
+    const fraEgne = statusFraEgneKolonner_(tabell, i);
+    if (fraEgne === KONFIG.STATUSER[0]) return;
+    const ny = velgStatus_(gammel, fraEgne);
+    if (ny && ny !== gammel) {
+      tabell.ark.getRange(i + 2, tabell.kol.status + 1).setValue(ny);
+      antall++;
+    }
+  });
+  return antall;
 }
 
 function kolonneBokstav_(k) {
@@ -226,9 +267,14 @@ function stilBooking_(tabell) {
     oppsummering: 320, kontaktperson: 150, telefon: 110, interesse: 140, forsteKontakt: 110, antall: 90,
     trad: 95, utkast: 105, las: 55, domene: 120, tradId: 120,
   };
+  // Overskriftsfargen hentes fra tabellen din, så alt ser likt ut.
+  const hodeFarge = (() => {
+    const f = String(ark.getRange(1, 1).getBackground() || '').toLowerCase();
+    return f && f !== '#ffffff' && f !== 'white' ? f : FARGE.indigo;
+  })();
   systemKolonner_(tabell).forEach(n => {
     ark.getRange(1, kol(n))
-      .setBackground(FARGE.indigo).setFontColor(FARGE.hvit).setFontWeight('bold')
+      .setBackground(hodeFarge).setFontColor(FARGE.hvit).setFontWeight('bold')
       .setHorizontalAlignment('left').setVerticalAlignment('middle');
     ark.setColumnWidth(kol(n), bredder[n] || 120);
     ark.getRange(2, kol(n), maks, 1).setVerticalAlignment('middle').setFontColor(FARGE.tekst);
@@ -262,12 +308,16 @@ function stilBooking_(tabell) {
     .setFontColor('#9CA3AF').setRanges([svarOmr]).build());
   ark.setConditionalFormatRules(beholdes.concat(nye));
 
-  // Lik skrift og radhøyde på alle bedriftsradene (farger og innhold røres ikke).
+  // Samme skrift og radhøyde i hele fanen som i tabellen din (kolonne A). Farger og innhold røres ikke.
+  const mal = ark.getRange(2, 1);
+  const skrift = mal.getFontFamily() || 'Calibri';
+  const storrelse = mal.getFontSize() || 11;
   const antall = ark.getLastRow() - 1;
   if (antall > 0) {
-    ark.getRange(2, 1, antall, ark.getLastColumn()).setFontSize(10).setFontFamily('Arial');
-    ark.setRowHeights(2, antall, 24);
+    ark.getRange(2, 1, antall, ark.getLastColumn()).setFontFamily(skrift).setFontSize(storrelse);
+    ark.setRowHeights(2, antall, 26);
   }
+  ark.getRange(1, 1, 1, ark.getLastColumn()).setFontFamily(skrift).setFontSize(storrelse);
 
   ark.setFrozenRows(1);
   try { ark.setFrozenColumns(1); } catch (e) { /* tabeller kan nekte; ikke viktig */ }
@@ -423,8 +473,8 @@ function lagFjorFane_(ss, tabell) {
   const med = egen(sp.med);
   const medIFjor = egen(sp.medIFjor);
   const ja = sp.ja || 'Ja';
-  // Bekreftet i år: «Med = Ja» hvis kolonnen finnes, ellers status «Bekreftet».
-  const bekreftet = med ? `${med},"${ja}"` : `${status},"Bekreftet"`;
+  // Bekreftet i år: Status «Bekreftet» eller «Med = Ja».
+  const erB = med ? `((${status}="Bekreftet")+(${med}="${ja}")>0)` : `(${status}="Bekreftet")`;
   const fjorFilter = medIFjor ? `,${medIFjor},"${ja}"` : '';
 
   ark.setColumnWidth(2, 190);
@@ -449,7 +499,7 @@ function lagFjorFane_(ss, tabell) {
     ark.getRange(r, 2).setValue(navn).setFontWeight('bold').setBackground(bg).setFontColor(fg);
     ark.getRange(r, 3).setFormula(`=COUNTIFS(${bedrift},"${monster}"${fjorFilter})`)
       .setBackground('#FEF9C3').setNote('Regnet ut fra bedriftsnavnene. Skriv inn riktig tall her hvis det ikke stemmer.');
-    ark.getRange(r, 4).setFormula(`=COUNTIFS(${pakke},"${pakkeNavn}",${bekreftet})`).setFontWeight('bold');
+    ark.getRange(r, 4).setFormula(`=SUMPRODUCT((${pakke}="${pakkeNavn}")*${erB})`).setFontWeight('bold');
     ark.getRange(r, 5).setFormula(`=D${r}-C${r}`).setNumberFormat('+0;-0;0');
     ark.getRange(r, 6).setFormula(`=IFERROR(D${r}/C${r},"–")`).setNumberFormat('0%');
     ark.getRange(r, 7).setFormula(`=COUNTIFS(${pakke},"${pakkeNavn}")-D${r}`);
@@ -485,10 +535,10 @@ function lagFjorFane_(ss, tabell) {
   [ark.getRange(liste + 1, 2, 1, 5), ark.getRange(liste + 1, 8, 1, 4)].forEach(r =>
     r.setBackground(FARGE.indigo).setFontColor(FARGE.hvit).setFontWeight('bold'));
   if (medIFjor) {
-    const ikkeBekreftet = med ? `${med}<>"${ja}"` : `${status}<>"Bekreftet"`;
+    const ikkeBekreftet = `${erB}=FALSE`;
     ark.getRange(liste + 2, 2).setFormula(
       `=IFERROR(SORT(FILTER({${bedrift},${status}},${medIFjor}="${ja}",${ikkeBekreftet},${bedrift}<>""),1,TRUE),"Alle er med 🎉")`);
-    const erBekreftet = med ? `${med}="${ja}"` : `${status}="Bekreftet"`;
+    const erBekreftet = erB;
     ark.getRange(liste + 2, 8).setFormula(
       `=IFERROR(SORT(FILTER({${bedrift},${pakke}},${medIFjor}<>"${ja}",${erBekreftet}),1,TRUE),"Ingen ennå")`);
   } else {

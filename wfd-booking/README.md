@@ -78,6 +78,11 @@ gir «Column 1/2» ordentlige navn (Bedrift/Kontakt), farger systemkolonnene og 
 kolonner og gjør Oversikt om til et dashbord med nøkkeltall, statusfordeling og listene «Trenger svar fra deg» og
 «Bør purres». Den viser hva som blir gjort før noe endres, og spør for seg før tomme faner slettes.
 
+Den gjør også Status til den eneste statuskolonnen i Booking: det du har skrevet i *Invitasjon sendt*, *Respons* og
+*Med* tas med inn i Status, og så skjules de kolonnene sammen med *Siste e-post fra*, *Utkast laget* og *Lås*
+(`KONFIG.SKJUL_I_BOOKING`). Ingenting slettes. Systemkolonnene får samme skrift og overskriftsfarge som tabellen din,
+og tomme kolonner mellom tabellen og systemkolonnene fjernes.
+
 **WFD → Fjern ekstra farger i Booking** fjerner bakgrunnsfarger satt for hånd og egne fargeregler på bedriftsradene,
 så bare Status og Trenger svar har farger. Innholdet endres ikke.
 
