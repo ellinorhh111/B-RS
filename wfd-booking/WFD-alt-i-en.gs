@@ -1357,6 +1357,7 @@ function onOpen() {
     .addItem('Oppdater Bedriftsliste fra Gmail', 'oppdaterBedriftsliste')
     .addItem('Lag invitasjoner til de som ikke er kontaktet', 'lagInvitasjoner')
     .addItem('Gjør arbeidsboken ryddig og pen', 'ryddArbeidsbok')
+    .addItem('Fjern ekstra farger i Booking', 'fjernEkstraFarger')
     .addItem('Stopp all automatikk', 'stoppAutomatikk')
     .addItem('Rydd opp: fjern systemets kolonner fra denne fanen', 'ryddFane')
     .addToUi();
@@ -2160,6 +2161,38 @@ function lagIkkeKontaktetFane_(ss) {
     SpreadsheetApp.newConditionalFormatRule().whenTextContains('@')
       .setBackground('#DCFCE7').setFontColor('#166534').setRanges([epostOmr]).build(),
   ]);
+}
+
+/**
+ * Fjerner farger i Booking som ikke kommer fra systemet: bakgrunnsfarger satt for hånd og egne fargeregler.
+ * Systemets egne farger på Status og Trenger svar legges på igjen etterpå. Innholdet røres ikke.
+ */
+function fjernEkstraFarger() {
+  const ui = SpreadsheetApp.getUi();
+  let tabell;
+  try {
+    tabell = lesBedrifter_();
+  } catch (e) {
+    ui.alert('Kjør «1. Sett opp arket og automatikk» fra booking-fanen først.');
+    return;
+  }
+  const ark = tabell.ark;
+  const systemKol = systemKolonner_(tabell).map(n => tabell.kol[n] + 1);
+  const egneRegler = ark.getConditionalFormatRules().filter(r => {
+    const omr = r.getRanges ? r.getRanges() : [];
+    return !omr.length || !omr.every(o => o.getNumColumns() === 1 && systemKol.indexOf(o.getColumn()) >= 0);
+  });
+  const svar = ui.alert('Fjern ekstra farger i «' + ark.getName() + '»',
+    'Dette fjerner bakgrunnsfarger satt for hånd på bedriftsradene, og ' + egneRegler.length +
+    ' egne fargeregler. Systemets farger på Status og Trenger svar beholdes. Innholdet endres ikke.\n\n' +
+    'Kan angres med Rediger → Angre eller versjonsloggen. Fortsette?', ui.ButtonSet.YES_NO);
+  if (svar !== ui.Button.YES) return;
+
+  const antall = ark.getLastRow() - 1;
+  if (antall > 0) ark.getRange(2, 1, antall, ark.getLastColumn()).setBackground(null);
+  ark.setConditionalFormatRules([]);
+  stilBooking_(tabell); // legger systemets fargeregler på igjen
+  ui.alert('Ferdig. Bare Status og Trenger svar har farger nå.');
 }
 
 // ===================== Bedriftsliste.gs =====================

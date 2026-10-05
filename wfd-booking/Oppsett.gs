@@ -15,6 +15,7 @@ function onOpen() {
     .addItem('Oppdater Bedriftsliste fra Gmail', 'oppdaterBedriftsliste')
     .addItem('Lag invitasjoner til de som ikke er kontaktet', 'lagInvitasjoner')
     .addItem('Gjør arbeidsboken ryddig og pen', 'ryddArbeidsbok')
+    .addItem('Fjern ekstra farger i Booking', 'fjernEkstraFarger')
     .addItem('Stopp all automatikk', 'stoppAutomatikk')
     .addItem('Rydd opp: fjern systemets kolonner fra denne fanen', 'ryddFane')
     .addToUi();

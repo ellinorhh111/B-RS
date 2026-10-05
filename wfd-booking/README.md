@@ -78,6 +78,9 @@ gir «Column 1/2» ordentlige navn (Bedrift/Kontakt), farger systemkolonnene og 
 kolonner og gjør Oversikt om til et dashbord med nøkkeltall, statusfordeling og listene «Trenger svar fra deg» og
 «Bør purres». Den viser hva som blir gjort før noe endres, og spør for seg før tomme faner slettes.
 
+**WFD → Fjern ekstra farger i Booking** fjerner bakgrunnsfarger satt for hånd og egne fargeregler på bedriftsradene,
+så bare Status og Trenger svar har farger. Innholdet endres ikke.
+
 ## Mot fjoråret
 
 Fanen **Mot fjoråret** sammenligner bekreftede Premium partnere og Partnere i år med i fjor:
