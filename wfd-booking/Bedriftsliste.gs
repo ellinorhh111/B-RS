@@ -204,7 +204,8 @@ function fornavnFraEpost_(epost) {
   const lokal = String(epost).split('@')[0].toLowerCase();
   const forste = lokal.split(/[._-]/)[0];
   if (!/^[a-zæøåäöé]{3,}$/.test(forste) || GENERISKE_ADRESSER.indexOf(forste) >= 0) return '';
-  if (lokal.indexOf('.') < 0 && lokal.indexOf('_') < 0 && lokal.indexOf('-') < 0 && forste.length <= 4) return ''; // «haha@», «ss@»
+  // Uten skilletegn vet vi ikke om det er et fornavn («clangdalen@», «haha@»), så bruk bare «Hei».
+  if (lokal.indexOf('.') < 0 && lokal.indexOf('_') < 0 && lokal.indexOf('-') < 0) return '';
   return forste.charAt(0).toUpperCase() + forste.slice(1);
 }
 
@@ -243,6 +244,7 @@ function invitasjonsKandidater_(ark) {
     if (!bedrift || fet[i] || !epost || r[kol.host]) return;
     if (iBooking[normaliserNavn_(sokeNavn_(bedrift))]) return;
     if (utkastTil[epost]) return;
+    utkastTil[epost] = true; // samme adresse kan stå på flere rader (f.eks. under to kategorier)
     ut.push({ rad: i + 2, bedrift: sokeNavn_(bedrift), epost, tidligere: r[kol.tidligere], norsk: erNorsk_(epost, r[kol.trad]) });
   });
   return ut;
@@ -256,7 +258,7 @@ function erNorsk_(epost, forrigeEmne) {
   const emne = String(forrigeEmne || '');
   if (/invitasjon|handelshøyskole|\b(sv|vs|vb):/i.test(emne)) return true;
   if (/invitation|\b(fw|fwd):/i.test(emne)) return false;
-  return /\.no$/.test(String(epost));
+  return /\.(no|as)$/.test(String(epost));
 }
 
 /** Henter invitasjons-PDF-en fra en invitasjon du har sendt tidligere (filnavnet må begynne med «filnavn»). */
