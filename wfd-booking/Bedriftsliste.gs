@@ -167,7 +167,7 @@ function sisteEpostOm_(bedrift, periode) {
 
   let best = null;
   trader.forEach(t => {
-    const meldinger = t.getMessages().filter(m => !m.isDraft());
+    const meldinger = t.getMessages().filter(m => !m.isDraft() && !erAutomatisk_(m));
     if (!meldinger.length) return;
     const motpart = finnMotpart_(meldinger);
     let poeng = 0;

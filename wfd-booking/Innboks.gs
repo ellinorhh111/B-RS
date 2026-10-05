@@ -76,6 +76,17 @@ function erFraOss_(melding) {
   return fra ? erEgenAdresse_(fra.epost) : false;
 }
 
+/**
+ * Autosvar («Automatic reply», «Autosvar», fravær) og feilmeldinger fra e-postsystemet (mailer-daemon).
+ * Slike regnes ikke som svar fra bedriften.
+ */
+function erAutomatisk_(melding) {
+  const fra = (tolkAdresser_(melding.getFrom())[0] || {}).epost || '';
+  if (fra && erIgnorert_(fra)) return true;
+  return /^\s*(automatic reply|auto(matisk)?\s*svar|autosvar|automatiskt svar|out of office|fraværende|frånvarande|abwesend|undeliverable|delivery status notification|ikke levert|auto:)/i
+    .test(melding.getSubject() || '');
+}
+
 function erIgnorert_(epost) {
   const lokal = String(epost).split('@')[0];
   return KONFIG.IGNORER_AVSENDERE.some(x => lokal.indexOf(x) >= 0);
@@ -157,7 +168,7 @@ function tradUrl_(tradId) {
  */
 function behandleTrad_(trad, tabell, trader, tilstand) {
   const tradId = trad.getId();
-  const alle = trad.getMessages().filter(m => !m.isDraft() && !m.isInTrash());
+  const alle = trad.getMessages().filter(m => !m.isDraft() && !m.isInTrash() && !erAutomatisk_(m));
   if (!alle.length) return false;
   const sistBehandlet = trader.kart[tradId] ? trader.kart[tradId].sist : 0;
   const nye = alle.filter(m => m.getDate().getTime() > sistBehandlet);
