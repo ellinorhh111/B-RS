@@ -2336,12 +2336,31 @@ function sokeNavn_(navn) {
 function sisteEpostOm_(bedrift, periode) {
   const navn = sokeNavn_(bedrift);
   if (navn.length < 3) return null;
+  const funnet = sokTraderOm_(navn, navn, periode, false);
+  if (funnet) return funnet;
+  // Reserve: første ord i navnet («ODIN Forvaltning» → «Odin»), men bare treff der domenet starter med ordet
+  // (odinfond.no), så vi ikke får tilfeldige treff på vanlige ord.
+  const forste = navn.split(/\s+/)[0];
+  if (forste.length >= 4 && forste.toLowerCase() !== navn.toLowerCase()) return sokTraderOm_(forste, navn, periode, true);
+  return null;
+}
+
+/** Domenet ligner navnet: nbim.no → NBIM, paretosec.com → Pareto, odinfond.no → ODIN Forvaltning. */
+function domeneLignerNavn_(domene, navn) {
+  const stamme = normaliserNavn_(String(domene).split('.').slice(-2, -1)[0]);
+  const n = normaliserNavn_(navn);
+  if (stamme.length < 3 || !n) return false;
+  if (n.indexOf(stamme) === 0 || (n.length >= 4 && stamme.indexOf(n) === 0)) return true;
+  const forste = normaliserNavn_(String(navn).split(/\s+/)[0]);
+  return forste.length >= 4 && stamme.indexOf(forste) === 0;
+}
+
+function sokTraderOm_(sokeord, navn, periode, kunDomene) {
   const adr = KONFIG.WFD_ADRESSE;
-  const sok = '"' + navn + '" {from:' + adr + ' to:' + adr + ' cc:' + adr + '} ' + periode + ' -in:chats -in:spam -in:trash';
+  const sok = '"' + sokeord + '" {from:' + adr + ' to:' + adr + ' cc:' + adr + '} ' + periode + ' -in:chats -in:spam -in:trash';
   const trader = GmailApp.search(sok, 0, 8);
   if (!trader.length) return null;
 
-  const normNavn = normaliserNavn_(navn);
   const trygt = navn.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
   const invitasjon = new RegExp('invit\\w*\\s+(til\\s+)?' + trygt, 'i');
   const iEmne = new RegExp(trygt, 'i');
@@ -2352,12 +2371,11 @@ function sisteEpostOm_(bedrift, periode) {
     if (!meldinger.length) return;
     const motpart = finnMotpart_(meldinger);
     let poeng = 0;
-    if (motpart && !motpart.privat) {
-      const stamme = normaliserNavn_(motpart.domene.split('.').slice(-2, -1)[0]);
-      if (stamme.length >= 3 && (normNavn.indexOf(stamme) === 0 || (normNavn.length >= 4 && stamme.indexOf(normNavn) === 0))) poeng += 3;
+    if (motpart && !motpart.privat && domeneLignerNavn_(motpart.domene, navn)) poeng += 3;
+    if (!kunDomene) {
+      if (invitasjon.test(meldinger[0].getPlainBody().slice(0, 3000))) poeng += 2;
+      if (iEmne.test(meldinger[0].getSubject())) poeng += 1;
     }
-    if (invitasjon.test(meldinger[0].getPlainBody().slice(0, 3000))) poeng += 2;
-    if (iEmne.test(meldinger[0].getSubject())) poeng += 1;
     if (!poeng) return;
     const dato = t.getLastMessageDate();
     if (!best || poeng > best.poeng || (poeng === best.poeng && dato > best.dato)) {
