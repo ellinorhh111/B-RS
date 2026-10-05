@@ -101,7 +101,9 @@ slettes, og du kan redigere fritt.
 **WFD → Oppdater Bedriftsliste fra Gmail** søker etter hver bedrift i e-post til/fra WFD-adressen og fyller
 *Kontaktet høst 2026*, *Svar fra bedrift*, *Kontaktet tidligere*, *E-post (fra Gmail)* og *Siste relevante e-post*
 (lenke). En tråd teller bare når motpartens domene ligner navnet, når e-posten inviterer bedriften ved navn, eller
-når navnet står i emnet – så bedrifter som bare er nevnt i andres e-poster ikke gir feil treff. Kategorirader i fet
+når navnet står i emnet – så bedrifter som bare er nevnt i andres e-poster ikke gir feil treff. Står navnet
+annerledes i arket enn i e-posten («Clarksson», «EQT group», «Hitec vision»), finnes bedriften likevel via domenene
+WFD har skrevet med (clarksons.com, eqtpartners.com, hitecvision.com). Kategorirader i fet
 skrift hoppes over.
 
 ## Ikke kontaktet
