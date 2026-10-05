@@ -41,7 +41,7 @@ function oppdaterBedriftsliste() {
   const maks = Math.max(ark.getMaxRows() - 1, 1);
   Object.keys(kol).forEach(k => ark.getRange(2, kol[k] + 1, maks, 1).clearDataValidations().clearContent());
   if (!ss.getSheetByName(KONFIG.ARK_IKKE_KONTAKTET)) lagIkkeKontaktetFane_(ss);
-  PropertiesService.getScriptProperties().setProperty('BL_POS', '0');
+  startBlKjoring_();
   fortsettBedriftsliste();
 }
 
@@ -175,28 +175,96 @@ function sokeNavn_(navn) {
 function sisteEpostOm_(bedrift, periode) {
   const navn = sokeNavn_(bedrift);
   if (navn.length < 3) return null;
-  const funnet = sokTraderOm_(navn, navn, periode, false);
+  const funnet = sokTraderOm_('"' + navn + '"', navn, periode, false);
   if (funnet) return funnet;
-  // Reserve: første ord i navnet («ODIN Forvaltning» → «Odin»), men bare treff der domenet starter med ordet
+  // Reserve 1: første ord i navnet («ODIN Forvaltning» → «Odin»), men bare treff der domenet ligner navnet
   // (odinfond.no), så vi ikke får tilfeldige treff på vanlige ord.
   const forste = navn.split(/\s+/)[0];
-  if (forste.length >= 4 && forste.toLowerCase() !== navn.toLowerCase()) return sokTraderOm_(forste, navn, periode, true);
-  return null;
+  if (forste.length >= 4 && forste.toLowerCase() !== navn.toLowerCase()) {
+    const f = sokTraderOm_('"' + forste + '"', navn, periode, true);
+    if (f) return f;
+  }
+  // Reserve 2: navnet står ikke i e-posten i det hele tatt, eller er stavet annerledes i arket
+  // («Clarksson» → clarksons.com, «EQT group» → eqtpartners.com, «Søderberg & Partners» → soderbergpartnerswealth.no).
+  // Søk på domenene WFD faktisk har skrevet med i perioden, som ligner navnet.
+  const domener = domenerIPeriode_(periode).filter(d => domeneLignerNavn_(d, navn)).slice(0, 5);
+  if (!domener.length) return null;
+  return sokTraderOm_('{' + domener.map(d => 'from:' + d + ' to:' + d + ' cc:' + d).join(' ') + '}', navn, periode, true);
 }
 
-/** Domenet ligner navnet: nbim.no → NBIM, paretosec.com → Pareto, odinfond.no → ODIN Forvaltning. */
+/** Små bokstaver uten aksenter: «Søderberg» → «soderberg», så navn kan sammenlignes med domener. */
+function utenAksent_(tekst) {
+  return String(tekst).toLowerCase().replace(/ø/g, 'o').replace(/æ/g, 'ae').replace(/å/g, 'a')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
+/**
+ * Domenet ligner navnet: nbim.no → NBIM, paretosec.com → Pareto, odinfond.no → ODIN Forvaltning,
+ * eqtpartners.com → EQT group, soderbergpartnerswealth.no → Søderberg & Partners, clarksons.com → Clarksson (skrivefeil).
+ */
 function domeneLignerNavn_(domene, navn) {
-  const stamme = normaliserNavn_(String(domene).split('.').slice(-2, -1)[0]);
-  const n = normaliserNavn_(navn);
+  const stamme = utenAksent_(normaliserNavn_(String(domene).split('.').slice(-2, -1)[0]));
+  const n = utenAksent_(normaliserNavn_(navn));
   if (stamme.length < 3 || !n) return false;
-  if (n.indexOf(stamme) === 0 || (n.length >= 4 && stamme.indexOf(n) === 0)) return true;
-  const forste = normaliserNavn_(String(navn).split(/\s+/)[0]);
-  return forste.length >= 4 && stamme.indexOf(forste) === 0;
+  if (n.indexOf(stamme) === 0 || (n.length >= 3 && stamme.indexOf(n) === 0)) return true;
+  const forste = utenAksent_(normaliserNavn_(String(navn).split(/\s+/)[0]));
+  // Vanlige ord som første ord sier ikke noe om bedriften («Norges Bank» ≠ norgesgruppen.no).
+  if (VANLIGE_FORSTEORD.indexOf(forste) >= 0) return false;
+  if (forste.length >= 4 && stamme.indexOf(forste) === 0) return true;
+  // Skrivefeil i arket: lange navn som deler de første seks bokstavene og er omtrent like lange.
+  let felles = 0;
+  while (felles < forste.length && forste[felles] === stamme[felles]) felles++;
+  return felles >= 6 && Math.abs(stamme.length - forste.length) <= 2;
+}
+
+const VANLIGE_FORSTEORD = ['norges', 'norsk', 'norske', 'norwegian', 'nordic', 'nordisk', 'first', 'global', 'bank',
+  'capital', 'kapital', 'invest', 'start', 'venture', 'women', 'kvinner', 'finans', 'finance'];
+
+/** Ny kjøring av Bedriftsliste: start øverst og bygg domenelisten på nytt (så dagens e-post kommer med). */
+function startBlKjoring_() {
+  const egenskaper = PropertiesService.getScriptProperties();
+  egenskaper.setProperty('BL_POS', '0');
+  egenskaper.setProperty('BL_KJORING', String(Date.now()));
+}
+
+const DOMENEINDEKS_ = {};
+
+/**
+ * Alle bedriftsdomener WFD-adressen har skrevet med i perioden. Bygges én gang per kjøring og huskes i
+ * skriptets cache, så porsjonene som fortsetter av seg selv slipper å gå gjennom e-posten på nytt.
+ */
+function domenerIPeriode_(periode) {
+  if (DOMENEINDEKS_[periode]) return DOMENEINDEKS_[periode];
+  const nokkel = 'BL_DOM_' + (PropertiesService.getScriptProperties().getProperty('BL_KJORING') || '') + '_' +
+    periode.replace(/\W/g, '');
+  let cache = null;
+  try { cache = CacheService.getScriptCache(); } catch (e) { /* uten cache bygges listen per porsjon */ }
+  const lagret = cache && cache.get(nokkel);
+  if (lagret) return (DOMENEINDEKS_[periode] = JSON.parse(lagret));
+
+  const adr = KONFIG.WFD_ADRESSE;
+  const sok = '{from:' + adr + ' to:' + adr + ' cc:' + adr + '} ' + periode + ' -in:chats -in:spam -in:trash';
+  const sett = {};
+  for (let start = 0; start < 2000; start += 500) {
+    const trader = GmailApp.search(sok, start, 500);
+    GmailApp.getMessagesForThreads(trader).forEach(meldinger => meldinger.forEach(m => {
+      if (m.isDraft() || erAutomatisk_(m)) return;
+      [m.getFrom(), m.getTo(), m.getCc()].forEach(felt => tolkAdresser_(felt).forEach(a => {
+        if (erEgenAdresse_(a.epost) || erIgnorert_(a.epost)) return;
+        const d = domeneAv_(a.epost);
+        if (d && KONFIG.PRIVATE_DOMENER.indexOf(d) < 0) sett[d] = true;
+      }));
+    }));
+    if (trader.length < 500) break;
+  }
+  const liste = Object.keys(sett);
+  try { if (cache) cache.put(nokkel, JSON.stringify(liste), 6 * 60 * 60); } catch (e) { /* for stor for cachen */ }
+  return (DOMENEINDEKS_[periode] = liste);
 }
 
 function sokTraderOm_(sokeord, navn, periode, kunDomene) {
   const adr = KONFIG.WFD_ADRESSE;
-  const sok = '"' + sokeord + '" {from:' + adr + ' to:' + adr + ' cc:' + adr + '} ' + periode + ' -in:chats -in:spam -in:trash';
+  const sok = sokeord + ' {from:' + adr + ' to:' + adr + ' cc:' + adr + '} ' + periode + ' -in:chats -in:spam -in:trash';
   const trader = GmailApp.search(sok, 0, 8);
   if (!trader.length) return null;
 
@@ -381,6 +449,6 @@ function utenKontaktperson_(ark) {
 
 /** Kjøres automatisk hver natt, så «Ikke kontaktet» alltid er oppdatert. */
 function nattligBedriftsliste() {
-  PropertiesService.getScriptProperties().setProperty('BL_POS', '0');
+  startBlKjoring_();
   fortsettBedriftsliste();
 }
