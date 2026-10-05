@@ -2499,8 +2499,14 @@ function lagInvitasjoner() {
   const start = Date.now();
   let laget = 0;
   const igjen = [];
+  const alleredeSendt = [];
   kandidater.forEach(k => {
     if (Date.now() - start > MAKS_KJORETID_MS) { igjen.push(k.bedrift); return; }
+    // Siste sjekk mot Gmail: er det sendt noe til denne adressen siden august (f.eks. i dag, før listen er oppdatert)?
+    if (GmailApp.search('to:' + k.epost + ' from:' + KONFIG.WFD_ADRESSE + ' after:' + KONFIG.HISTORIKK_FRA_DATO, 0, 1).length) {
+      alleredeSendt.push(k.bedrift);
+      return;
+    }
     const norsk = k.norsk;
     const fornavn = fornavnFraEpost_(k.epost);
     const hilsen = norsk ? (fornavn ? 'Hei ' + fornavn : 'Hei') : (fornavn ? 'Hi ' + fornavn : 'Hi');
@@ -2516,6 +2522,7 @@ function lagInvitasjoner() {
   });
 
   ui.alert(laget + ' invitasjonsutkast ligger nå under «Utkast» i Gmail.' +
+    (alleredeSendt.length ? '\n\nHoppet over fordi de allerede har fått e-post i høst:\n• ' + alleredeSendt.join('\n• ') : '') +
     (pdfNo || pdfEn ? '' : '\n\nMerk: Fant ikke invitasjons-PDF-en i sendt e-post, så den må legges ved manuelt.') +
     (igjen.length ? '\n\nTiden gikk ut før disse – kjør menyvalget én gang til:\n• ' + igjen.join('\n• ') : '') +
     '\n\nSe over, legg gjerne til en personlig setning, og send. Arket oppdateres automatisk når de er sendt.' +
