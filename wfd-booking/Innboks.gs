@@ -182,7 +182,8 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
     return false;
   }
 
-  let rad = finnRad_(tabell, motpart, '');
+  const treff = {};
+  let rad = finnRad_(tabell, motpart, '', treff);
   // Historikk uten AI for bare kjente bedrifter: hopp raskt over alt annet.
   if (rad < 0 && tilstand.historikk && KONFIG.HISTORIKK_BARE_KJENTE && !(KONFIG.HISTORIKK_MED_AI && harAI_())) {
     lagreTrad_(trader, tradId, motpart.nokkel, siste.getDate(), alle.length);
@@ -218,7 +219,7 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   }
 
   // ---- Finn eller lag rad ----
-  if (rad < 0 && analyse && analyse.bedrift) rad = finnRad_(tabell, motpart, analyse.bedrift);
+  if (rad < 0 && analyse && analyse.bedrift) rad = finnRad_(tabell, motpart, analyse.bedrift, treff);
   const ny = rad < 0;
   // Historikken lager aldri nye rader for private adresser (gmail.com o.l.) – det er som regel ikke bedrifter.
   if (ny && tilstand.historikk && (KONFIG.HISTORIKK_BARE_KJENTE || motpart.privat)) {
@@ -231,6 +232,14 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
     settCelle_(tabell, rad, 'bedrift', (analyse && analyse.bedrift) || (motpart.privat ? motpart.navn || motpart.epost
       : navnFraBedriftsliste_(motpart.domene) || navnFraDomene_(motpart.domene)));
     settCelle_(tabell, rad, 'forsteKontakt', alle[0].getDate());
+    foreslaa_(celle_(tabell, rad, 'bedrift'), 'Ny bedrift fra Gmail (lagt til i Booking)', '', celle_(tabell, rad, 'bedrift'),
+      motpart.epost + ' – ' + siste.getSubject(), tradUrl_(tradId),
+      { type: 'nyBedrift', nokkel: 'ny|' + (motpart.privat ? motpart.epost : motpart.domene) });
+  } else if (treff.usikker) {
+    const b = celle_(tabell, rad, 'bedrift');
+    foreslaa_(b, 'E-post koblet til bedriften fordi domenet ligner navnet', motpart.epost, b,
+      'Avvis hvis ' + motpart.domene + ' ikke er ' + b + ' – da kobles domenet aldri til bedriften igjen. ' + siste.getSubject(),
+      tradUrl_(tradId), { type: 'kobling', domene: motpart.domene || motpart.epost, nokkel: koblingsNokkel_(motpart.domene || motpart.epost, b) });
   }
   if (!motpart.privat && !celle_(tabell, rad, 'domene')) settCelle_(tabell, rad, 'domene', motpart.domene);
 
@@ -245,28 +254,34 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   if (!(forste instanceof Date) || alle[0].getDate() < forste) settCelle_(tabell, rad, 'forsteKontakt', alle[0].getDate());
 
   // ---- Status og felter ----
-  let foreslatt;
-  // Uten AI: les bedriftens siste e-post etter tydelige ja/nei-formuleringer.
+  // Sikkert: at e-post er sendt/mottatt. Usikkert (tolket fra teksten): ja/nei/bekreftet – det går til godkjenning.
   const sisteDeres = alle.filter(m => !erFraOss_(m)).pop();
   const tolket = !analyse && sisteDeres ? tolkSvarUtenAI_(rensTekst_(sisteDeres.getPlainBody())) : null;
-  if (analyse) {
-    foreslatt = analyse.status;
-  } else if (tolket) {
-    foreslatt = tolket.status;
-  } else if (nyeFraDem || alle.some(m => !erFraOss_(m))) {
-    foreslatt = 'I dialog';
-  } else {
-    // Bare våre egne e-poster: to eller flere på rad uten svar = purret.
-    foreslatt = alle.length >= 2 ? 'Purret' : 'Kontaktet';
-  }
+  const tolketStatus = analyse ? analyse.status : (tolket ? tolket.status : '');
+  const faktisk = (nyeFraDem || sisteDeres) ? 'I dialog' : (alle.length >= 2 ? 'Purret' : 'Kontaktet');
+  const foreslatt = tolketStatus && USIKRE_STATUSER.indexOf(tolketStatus) < 0 ? tolketStatus : faktisk;
   const statusEtter = last ? statusFor : velgStatus_(statusFor, foreslatt);
+  let tilGodkjenning = '';
+  if (!last && sisteDeres && USIKRE_STATUSER.indexOf(tolketStatus) >= 0 && velgStatus_(statusEtter, tolketStatus) !== statusEtter) {
+    const tekstDeres = rensTekst_(sisteDeres.getPlainBody());
+    const pakke = (tolket && tolket.pakke) || (tolketStatus === 'Bekreftet' ? pakkeFraEpost_(tekstDeres) : '');
+    if (foreslaa_(bedrift, 'Status ut fra svaret' + (analyse ? ' (AI)' : ''), statusEtter, tolketStatus + (pakke ? ' · ' + pakke : ''),
+      tekstDeres, tradUrl_(tradId), { type: 'status', verdi: tolketStatus, pakke, nesteSteg: NESTE_STEG_ETTER_SVAR[tolketStatus] || '',
+        nokkel: 'status|' + normaliserNavn_(bedrift) + '|' + sisteDeres.getId() + '|' + tolketStatus }) ||
+      forslagStatus_('status|' + normaliserNavn_(bedrift) + '|' + sisteDeres.getId() + '|' + tolketStatus) === VENTER) {
+      tilGodkjenning = tolketStatus;
+    }
+  }
   if (!last) {
     settCelle_(tabell, rad, 'status', statusEtter);
     speilStatus_(tabell, rad, statusEtter);
     if (tabell.kol.pakke !== undefined && !celle_(tabell, rad, 'pakke')) {
       const fraDem = alle.filter(m => !erFraOss_(m)).map(m => rensTekst_(m.getPlainBody())).join('\n');
       const pakke = pakkeFraEpost_(fraDem);
-      if (pakke) settCelle_(tabell, rad, 'pakke', pakke);
+      if (pakke && tilGodkjenning !== 'Bekreftet') {
+        foreslaa_(bedrift, 'Pakke 2027 ut fra e-posten', '', pakke, setningMed_(fraDem, /premium|partner/i), tradUrl_(tradId),
+          { type: 'pakke', nokkel: 'pakke|' + normaliserNavn_(bedrift) + '|' + pakke });
+      }
     }
     const nyeFraDemTekst = nye.filter(m => !erFraOss_(m)).map(m => rensTekst_(m.getPlainBody())).join('\n');
     leggTilOnsker_(tabell, rad, onskerFraEpost_(nyeFraDemTekst));
@@ -284,8 +299,8 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   settCelle_(tabell, rad, 'antall', (Number(celle_(tabell, rad, 'antall')) || 0) + nye.length);
 
   // ---- «Hvor står vi nå» – bare hvis denne tråden er den nyeste kontakten ----
-  const oppsummering = analyse ? analyse.oppsummering
-    : (tolket && sisteFraDem ? tolket.tekst + ' (tolket automatisk – sjekk) · ' : '') + enkelOppsummering_(siste);
+  const oppsummering = (tilGodkjenning ? 'Forslag: ' + tilGodkjenning + ' (venter på godkjenning) · ' : '') +
+    (analyse ? analyse.oppsummering : enkelOppsummering_(siste));
   if (erNyest) {
     settCelle_(tabell, rad, 'sistKontakt', siste.getDate());
     settCelle_(tabell, rad, 'retning', sisteFraDem ? 'Bedriften' : 'Oss');
@@ -293,8 +308,8 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
     const fersk = !tilstand.historikk || dagerSiden_(siste.getDate()) <= 14;
     settCelle_(tabell, rad, 'trengerSvar', sisteFraDem && fersk && (!analyse || analyse.trenger_svar) ? 'Ja' : 'Nei');
     settCelle_(tabell, rad, 'oppsummering', oppsummering);
-    if (analyse && analyse.neste_steg) settCelle_(tabell, rad, 'nesteSteg', analyse.neste_steg);
-    else if (tolket && sisteFraDem) settCelle_(tabell, rad, 'nesteSteg', NESTE_STEG_ETTER_SVAR[tolket.status] || '');
+    if (tilGodkjenning) settCelle_(tabell, rad, 'nesteSteg', 'Godkjenn eller avvis «' + tilGodkjenning + '» i fanen ' + KONFIG.ARK_GODKJENNING);
+    else if (analyse && analyse.neste_steg) settCelle_(tabell, rad, 'nesteSteg', analyse.neste_steg);
     else if (!sisteFraDem) settCelle_(tabell, rad, 'nesteSteg', 'Vent på svar – purr etter ' + KONFIG.PURR_ETTER_DAGER + ' dager');
     if (analyse && /^\d{4}-\d{2}-\d{2}$/.test(analyse.oppfolging_dato)) {
       const [a, m, d] = analyse.oppfolging_dato.split('-').map(Number);
@@ -363,6 +378,15 @@ const SVAR_JA = new RegExp([
   'v[æa]re med p[åa] dette', "we('d| would)? (love|be happy|be glad) to (join|participate|attend)", 'count us in',
   'happy to (join|participate)', 'we confirm', 'g[äa]rna (med|delta)',
 ].join('|'), 'i');
+
+// Statuser systemet bare kan gjette ut fra teksten – de foreslås, aldri satt direkte.
+const USIKRE_STATUSER = ['Takket nei', 'Interessert', 'Tilbud sendt', 'Bekreftet'];
+
+/** Første setning i teksten som passer mønsteret (til «Grunnlag» i Til godkjenning). */
+function setningMed_(tekst, monster) {
+  const setninger = String(tekst || '').split(/\n+|(?<=[.!?])\s+/);
+  return (setninger.find(x => monster.test(x)) || '').trim().slice(0, 250);
+}
 
 const NESTE_STEG_ETTER_SVAR = {
   'Takket nei': 'Send en kort takk, og spør om dere kan ta kontakt neste år',
@@ -483,7 +507,9 @@ function hentOnskerFraGmail_(tabell, maksMs) {
     const for_ = String(celle_(tabell, i, 'onsker')) + String(celle_(tabell, i, 'pakke'));
     if (tabell.kol.pakke !== undefined && !celle_(tabell, i, 'pakke')) {
       const p = pakkeFraEpost_(samlet);
-      if (p) settCelle_(tabell, i, 'pakke', p);
+      const b = celle_(tabell, i, 'bedrift');
+      if (p) foreslaa_(b, 'Pakke 2027 ut fra e-posten', '', p, setningMed_(samlet, /premium|partner/i), '',
+        { type: 'pakke', nokkel: 'pakke|' + normaliserNavn_(b) + '|' + p });
     }
     leggTilOnsker_(tabell, i, onskerFraEpost_(samlet));
     if (String(celle_(tabell, i, 'onsker')) + String(celle_(tabell, i, 'pakke')) !== for_) oppdatert++;
@@ -514,16 +540,17 @@ function lesSvarPaNytt() {
     if (!tolket) return;
     const etter = velgStatus_(for_, tolket.status);
     if (etter === for_) return;
-    settCelle_(tabell, i, 'status', etter);
-    speilStatus_(tabell, i, etter);
-    if (tolket.pakke && tabell.kol.pakke !== undefined && !celle_(tabell, i, 'pakke')) settCelle_(tabell, i, 'pakke', tolket.pakke);
-    if (NESTE_STEG_ETTER_SVAR[etter]) settCelle_(tabell, i, 'nesteSteg', NESTE_STEG_ETTER_SVAR[etter]);
     const bedrift = celle_(tabell, i, 'bedrift');
-    loggHendelse_([new Date(), bedrift, 'Fra bedriften', deres.getFrom(), deres.getSubject(),
-      tolket.tekst + ' (tolket automatisk – sjekk)', for_, etter, tradUrl_(tradId)]);
-    endret.push(bedrift + ': ' + for_ + ' → ' + etter);
+    const tekst = rensTekst_(deres.getPlainBody());
+    const nokkel = 'status|' + normaliserNavn_(bedrift) + '|' + deres.getId() + '|' + tolket.status;
+    if (!foreslaa_(bedrift, 'Status ut fra svaret', for_, tolket.status + (tolket.pakke ? ' · ' + tolket.pakke : ''), tekst,
+      tradUrl_(tradId), { type: 'status', verdi: tolket.status, pakke: tolket.pakke || '',
+        nesteSteg: NESTE_STEG_ETTER_SVAR[tolket.status] || '', nokkel })) return;
+    settCelle_(tabell, i, 'nesteSteg', 'Godkjenn eller avvis «' + tolket.status + '» i fanen ' + KONFIG.ARK_GODKJENNING);
+    endret.push(bedrift + ': ' + for_ + ' → ' + tolket.status + '?');
   });
   ui.alert(endret.length
-    ? 'Status ble oppdatert ut fra svarene (sjekk gjerne):\n\n• ' + endret.join('\n• ')
-    : 'Fant ingen tydelige ja- eller nei-svar som ikke allerede står i Booking.');
+    ? endret.length + ' forslag ligger nå i fanen «' + KONFIG.ARK_GODKJENNING + '». Ingenting er endret før du godkjenner:\n\n• ' +
+      endret.join('\n• ')
+    : 'Fant ingen nye tydelige ja- eller nei-svar.');
 }

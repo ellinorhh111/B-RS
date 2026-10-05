@@ -82,6 +82,10 @@ function fyllNettkontakter_(ark, kol) {
     ark.getRange(rad, kol.annen + 1).setValue(k.kontakt)
       .setNote((k.merknad || '') + (k.kilde ? '\nKilde: ' + k.kilde : ''));
     ark.getRange(rad, kol.kilde + 1).setValue(k.kilde || 'nett');
+    if (/@/.test(k.kontakt)) {
+      foreslaa_(sokeNavn_(b), 'Kontakt hentet fra nettet', '', k.kontakt, (k.merknad || '') + (k.kilde ? ' · Kilde: ' + k.kilde : ''), '',
+        { type: 'nett', nokkel: 'nett|' + nokkel + '|' + k.kontakt.toLowerCase() });
+    }
     fylt[nokkel] = true;
     n++;
   });

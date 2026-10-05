@@ -117,7 +117,8 @@ function nyRad_(tabell) {
  * Finner raden for en motpart. Rekkefølge: eksakt e-post, domene, bedriftsnavn.
  * Returnerer -1 hvis ingen treff.
  */
-function finnRad_(tabell, motpart, bedriftsnavn) {
+function finnRad_(tabell, motpart, bedriftsnavn, info) {
+  info = info || {};
   const epost = (motpart.epost || '').toLowerCase();
   for (let i = 0; i < tabell.rader.length; i++) {
     const liste = String(celle_(tabell, i, 'epost')).toLowerCase().split(/[,;\s]+/);
@@ -137,15 +138,23 @@ function finnRad_(tabell, motpart, bedriftsnavn) {
   // Domenet ligner bedriftsnavnet: nbim.no → «NBIM (Premium)», dnb.no → «DNB Carnegie», eqtpartners.com → «EQT (Partner)»,
   // odinfond.no → «Odin Forvaltning».
   if (!motpart.privat && motpart.domene) {
+    // Usikkert: koblingen må godkjennes, og en avvist kobling brukes aldri igjen.
     for (let i = 0; i < tabell.rader.length; i++) {
       const b = celle_(tabell, i, 'bedrift');
-      if (b && domeneLignerNavn_(motpart.domene, b)) return i;
+      if (b && domeneLignerNavn_(motpart.domene, b) && !erAvvist_(koblingsNokkel_(motpart.domene, b))) {
+        info.usikker = !tydeligDomene_(motpart.domene, b); // paretosec.com → Pareto er tydelig; clarksons.com → Clarksson er det ikke
+        return i;
+      }
     }
   }
   const navn = normaliserNavn_(bedriftsnavn);
   if (navn) {
     for (let i = 0; i < tabell.rader.length; i++) {
-      if (normaliserNavn_(celle_(tabell, i, 'bedrift')) === navn) return i;
+      const b = celle_(tabell, i, 'bedrift');
+      if (normaliserNavn_(b) === navn && !erAvvist_(koblingsNokkel_(motpart.domene || motpart.epost, b))) {
+        info.usikker = true;
+        return i;
+      }
     }
   }
   return -1;
@@ -161,6 +170,10 @@ function normaliserNavn_(navn) {
 
 function statusRang_(status) {
   return KONFIG.STATUSER.indexOf(String(status));
+}
+
+function koblingsNokkel_(domene, bedrift) {
+  return 'kobling|' + String(domene).toLowerCase() + '|' + normaliserNavn_(bedrift);
 }
 
 /** Ny status skal aldri flytte bedriften bakover, bortsett fra «Takket nei». */

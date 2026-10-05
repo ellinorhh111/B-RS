@@ -75,8 +75,8 @@ function fortsettBedriftsliste() {
     const rad = pos + 2;
     const bedrift = navn[pos];
     if (bedrift && !fet[pos]) {
-      const host = sisteEpostOm_(bedrift, 'after:' + grense);
-      const for_ = sisteEpostOm_(bedrift, 'before:' + grense);
+      const host = sjekketTreff_(bedrift, sisteEpostOm_(bedrift, 'after:' + grense));
+      const for_ = sjekketTreff_(bedrift, sisteEpostOm_(bedrift, 'before:' + grense));
       const nyest = host || for_;
       ark.getRange(rad, kol.host + 1).setValue(host ? host.dato : '');
       ark.getRange(rad, kol.svar + 1).setValue(host ? (host.svar ? 'Ja' : 'Nei') : '');
@@ -245,6 +245,8 @@ function stilBedriftsliste_(ark, kol) {
   ark.setConditionalFormatRules(beholdes.concat([
     regel().whenFormulaSatisfied(kategoriFormel).setBackground('#EEF2FF').setFontColor('#3730A3').setBold(true)
       .setRanges([ark.getRange(2, 1, maks, sisteKol)]).build(),
+    regel().whenFormulaSatisfied(ventendeFormel_('A2')).setBackground('#FDBA74').setFontColor('#7C2D12').setBold(true)
+      .setRanges([status]).build(),
     regel().whenTextEqualTo('Kontaktet i høst').setBackground('#DCFCE7').setFontColor('#166534').setRanges([status]).build(),
     regel().whenTextEqualTo('Kontaktet (manuelt)').setBackground('#DCFCE7').setFontColor('#166534').setItalic(true).setRanges([status]).build(),
     regel().whenTextEqualTo('Kontaktet tidligere').setBackground('#FEF3C7').setFontColor('#92400E').setRanges([status]).build(),
@@ -289,6 +291,29 @@ function sokeNavn_(navn) {
  *  - navnet står i emnefeltet.
  * Returnerer {dato, emne, url, kontakt, svar} eller null.
  */
+/**
+ * Usikre Gmail-treff (navnet står ikke tydelig i domenet) går til godkjenning. Avviste treff regnes ikke med.
+ * Venter treffet på godkjenning, regnes det med i mellomtiden (så bedriften ikke inviteres to ganger).
+ */
+function sjekketTreff_(bedrift, treff) {
+  if (!treff || !treff.usikker) return treff;
+  const domene = domeneAv_(treff.kontakt || '') || 'ukjent';
+  const nokkel = 'bl|' + normaliserNavn_(bedrift) + '|' + domene;
+  if (erAvvist_(nokkel)) return null;
+  foreslaa_(sokeNavn_(bedrift), 'Bedriftsliste: Gmail-treff der navnet bare ligner', '', treff.kontakt || '(ingen adresse)',
+    'Emne: ' + treff.emne + '. Avvis hvis e-posten ikke gjelder denne bedriften – da vises den som ikke kontaktet.', treff.url,
+    { type: 'blKobling', domene, nokkel });
+  return treff;
+}
+
+/** Tydelig treff: domenet er navnet (nbim.no → NBIM, paretosec.com → Pareto), ikke bare ligner det. */
+function tydeligDomene_(domene, navn) {
+  const stamme = utenAksent_(normaliserNavn_(String(domene).split('.').slice(-2, -1)[0] || ''));
+  const n = utenAksent_(normaliserNavn_(navn));
+  if (stamme.length < 3 || !n) return false;
+  return stamme === n || n.indexOf(stamme) === 0 || (n.length >= 4 && stamme.indexOf(n) === 0);
+}
+
 function sisteEpostOm_(bedrift, periode) {
   const navn = sokeNavn_(bedrift);
   if (navn.length < 3) return null;
@@ -300,20 +325,25 @@ function sisteEpostOm_(bedrift, periode) {
     if (f) return f;
   }
   const funnet = sokTraderOm_('"' + navn + '"', navn, periode, false);
-  if (funnet) return funnet;
+  if (funnet) {
+    funnet.usikker = !tydeligDomene_(domeneAv_(funnet.kontakt || ''), navn);
+    return funnet;
+  }
   // Reserve 1: første ord i navnet («ODIN Forvaltning» → «Odin»), men bare treff der domenet ligner navnet
   // (odinfond.no), så vi ikke får tilfeldige treff på vanlige ord.
   const forste = navn.split(/\s+/)[0];
   if (forste.length >= 4 && forste.toLowerCase() !== navn.toLowerCase()) {
     const f = sokTraderOm_('"' + forste + '"', navn, periode, true);
-    if (f) return f;
+    if (f) { f.usikker = !tydeligDomene_(domeneAv_(f.kontakt || ''), navn); return f; }
   }
   // Reserve 2: navnet står ikke i e-posten i det hele tatt, eller er stavet annerledes i arket
   // («Clarksson» → clarksons.com, «EQT group» → eqtpartners.com, «Søderberg & Partners» → soderbergpartnerswealth.no).
   // Søk på domenene WFD faktisk har skrevet med i perioden, som ligner navnet.
   const domener = domenerIPeriode_(periode).filter(d => domeneLignerNavn_(d, navn)).slice(0, 5);
   if (!domener.length) return null;
-  return sokTraderOm_('{' + domener.map(d => 'from:' + d + ' to:' + d + ' cc:' + d).join(' ') + '}', navn, periode, true);
+  const f2 = sokTraderOm_('{' + domener.map(d => 'from:' + d + ' to:' + d + ' cc:' + d).join(' ') + '}', navn, periode, true);
+  if (f2) f2.usikker = !tydeligDomene_(domeneAv_(f2.kontakt || ''), navn);
+  return f2;
 }
 
 /** Små bokstaver uten aksenter: «Søderberg» → «soderberg», så navn kan sammenlignes med domener. */

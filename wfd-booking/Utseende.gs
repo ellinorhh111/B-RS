@@ -91,7 +91,9 @@ function ryddArbeidsbok() {
     plan.push('Ny fane «' + KONFIG.ARK_GJOREMAL + '»: egne oppgaver med avkrysning, med de åpne oppgavene vi har nå');
   }
   plan.push('Oversikt blir et dashbord, «' + KONFIG.ARK_FJOR + '» sammenligner med fjoråret, og Logg får en ryddig tabell');
-  plan.push('Fanene sorteres: Oversikt, ' + KONFIG.ARK_GJOREMAL + ', ' + KONFIG.ARK_IKKE_KONTAKTET + ', ' + KONFIG.ARK_FJOR + ', ' + KONFIG.ARK_BEDRIFTSOVERSIKT + ', Booking, Bedriftsliste, Logg');
+  plan.push('Ny fane «' + KONFIG.ARK_GODKJENNING + '»: alt systemet gjetter på (ja/nei-svar, pakke, nye bedrifter, usikre koblinger, ' +
+    'kontakter fra nettet) venter der til du godkjenner eller avviser');
+  plan.push('Fanene sorteres: Oversikt, ' + KONFIG.ARK_GODKJENNING + ', ' + KONFIG.ARK_GJOREMAL + ', ' + KONFIG.ARK_IKKE_KONTAKTET + ', ' + KONFIG.ARK_FJOR + ', ' + KONFIG.ARK_BEDRIFTSOVERSIKT + ', Booking, Bedriftsliste, Logg');
 
   const svar = ui.alert('Gjør arbeidsboken ryddig',
     'Dette blir gjort:\n\n• ' + plan.join('\n• ') + '\n\nInnholdet i tabellene dine endres ikke. Fortsette?', ui.ButtonSet.YES_NO);
@@ -150,7 +152,7 @@ function ryddArbeidsbok() {
   const tomme = ss.getSheets().filter(a => {
     const n = a.getName();
     if (n === tabell.ark.getName() || [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT,
-      KONFIG.ARK_IKKE_KONTAKTET, KONFIG.ARK_GJOREMAL, KONFIG.ARK_TRADER].indexOf(n) >= 0) return false;
+      KONFIG.ARK_IKKE_KONTAKTET, KONFIG.ARK_GJOREMAL, KONFIG.ARK_GODKJENNING, KONFIG.ARK_TRADER].indexOf(n) >= 0) return false;
     if ((KONFIG.ANDRE_FANER || []).some(f => f.til === n)) return false;
     return a.getLastRow() <= 1;
   });
@@ -226,6 +228,12 @@ function gjorOmAutonavn_(tabell, par) {
   return antall;
 }
 
+/** Formel for betinget formatering: venter et forslag for bedriften i cellen på godkjenning? */
+function ventendeFormel_(celle) {
+  const G_ = "'" + KONFIG.ARK_GODKJENNING + "'!";
+  return `=COUNTIFS(INDIRECT("${G_}B:B"),$${celle.replace(/(\d+)$/, '')}${celle.match(/\d+$/)[0]},INDIRECT("${G_}J:J"),"${VENTER}")>0`;
+}
+
 /** Kolonnenummeret (1-basert) med denne overskriften i rad 1, eller 0. */
 function kolonneMedNavn_(ark, navn) {
   const h = ark.getRange(1, 1, 1, Math.max(ark.getLastColumn(), 1)).getValues()[0].map(v => String(v).trim());
@@ -256,6 +264,7 @@ function synkStatusFraEgneKolonner_(tabell) {
 function sorterFaner_(ss, tabell) {
   const rekkefolge = [
     [KONFIG.ARK_OVERSIKT, FANEFARGE.rapport],
+    [KONFIG.ARK_GODKJENNING, '#EA580C'],
     [KONFIG.ARK_GJOREMAL, FANEFARGE.rapport],
     [KONFIG.ARK_IKKE_KONTAKTET, FANEFARGE.rapport],
     [KONFIG.ARK_FJOR, FANEFARGE.rapport],
@@ -275,6 +284,7 @@ function sorterFaner_(ss, tabell) {
 
 /** Felles utseende på alle faner. Trygt å kjøre så ofte du vil. */
 function stilAlleFaner_(ss, tabell) {
+  godkjenningsArk_(ss); // må finnes før Oversikt og Booking viser hvor mange som venter
   stilBooking_(tabell);
   stilLogg_(ss);
   (KONFIG.ANDRE_FANER || []).forEach(f => { const a = ss.getSheetByName(f.til); if (a) stilEnkelListe_(a); });
@@ -283,6 +293,7 @@ function stilAlleFaner_(ss, tabell) {
   lagBedriftsoversikt_(ss, tabell);
   lagIkkeKontaktetFane_(ss);
   lagGjoremal_(ss);
+  stilGodkjenning_(godkjenningsArk_(ss));
   sorterFaner_(ss, tabell);
 }
 
@@ -360,6 +371,9 @@ function stilBooking_(tabell) {
   });
   const nye = [];
   const statusOmr = ark.getRange(2, kol('status'), maks, 1);
+  // Oransje status = et automatisk forslag for bedriften venter på godkjenning (står først, så den vinner).
+  nye.push(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(ventendeFormel_(kolonneBokstav_(kol('bedrift')) + '2'))
+    .setBackground('#FDBA74').setFontColor('#7C2D12').setBold(true).setRanges([statusOmr]).build());
   Object.keys(STATUSFARGE).forEach(st => {
     nye.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(st)
       .setBackground(STATUSFARGE[st][0]).setFontColor(STATUSFARGE[st][1]).setRanges([statusOmr]).build());
@@ -487,7 +501,18 @@ function lagOversikt_(ss, tabell) {
 
   // Status-fordeling (B–H)
   const statuser = KONFIG.STATUSER.concat([KONFIG.STATUS_NEI]);
-  ark.setRowHeight(7, 20);
+  // Varsel når automatiske forslag venter på godkjenning.
+  ark.setRowHeight(7, 26);
+  const varsel = ark.getRange(7, 2, 1, 12);
+  varsel.merge();
+  varsel.getCell(1, 1).setFormula(`=IFERROR(LET(n,COUNTIF('${KONFIG.ARK_GODKJENNING}'!J:J,"${VENTER}"),` +
+    `IF(n=0,"✓ Ingen automatiske endringer venter på godkjenning","⚠ "&n&" automatiske endringer venter på godkjenning – se fanen «${KONFIG.ARK_GODKJENNING}»")),"")`);
+  varsel.setFontWeight('bold').setHorizontalAlignment('left');
+  ark.setConditionalFormatRules(ark.getConditionalFormatRules().concat([
+    SpreadsheetApp.newConditionalFormatRule().whenTextStartsWith('⚠').setBackground('#FFEDD5').setFontColor('#9A3412')
+      .setRanges([varsel]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextStartsWith('✓').setFontColor('#166534').setRanges([varsel]).build(),
+  ]));
   ark.getRange('B8').setValue('Status').setFontSize(13).setFontWeight('bold');
   const forste = 9;
   const sist = forste + statuser.length - 1;

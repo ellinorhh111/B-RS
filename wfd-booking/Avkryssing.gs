@@ -5,6 +5,7 @@
  *  Oversikt → «Bør purres» ✓              Status blir «Purret» og «Sist kontakt» i dag i Booking.
  *  Ikke kontaktet ✓                       «Har kontaktet» krysses av i Bedriftsliste (kontaktet på annen måte).
  *  Bedriftsliste → «Annen kontakt»        Skriver du inn en kontakt selv, er den ikke lenger «hentet fra nett» (oransje).
+ *  Til godkjenning → Godkjenn / Avvis     Forslaget skrives inn (eller forkastes). Se Godkjenning.gs.
  *
  * onEdit er en enkel trigger: den kjører av seg selv når noen endrer en celle, uten oppsett. Den bruker bare
  * regnearket som er åpent (ikke Gmail), og hver endring logges i Logg.
@@ -15,6 +16,7 @@ function onEdit(e) {
     const navn = e.range.getSheet().getName();
     if (navn === KONFIG.ARK_OVERSIKT) return hakeOversikt_(e);
     if (navn === KONFIG.ARK_IKKE_KONTAKTET) return hakeIkkeKontaktet_(e);
+    if (navn === KONFIG.ARK_GODKJENNING) return hakeGodkjenning_(e);
     const liste = bedriftslisteArk_(e.source);
     if (liste && navn === liste.getName()) return endretBedriftsliste_(e, liste);
   } catch (feil) {
@@ -111,4 +113,16 @@ function endretBedriftsliste_(e, liste) {
   if (e.range.getColumn() !== h.indexOf(BL_KOLONNER.annen) + 1 || e.range.getRow() < 2) return;
   const kKilde = h.indexOf(BL_KOLONNER.kilde) + 1;
   if (kKilde) liste.getRange(e.range.getRow(), kKilde).clearContent();
+  // Et ventende «kontakt fra nett»-forslag for bedriften er da avgjort av deg.
+  const gArk = e.source.getSheetByName(KONFIG.ARK_GODKJENNING);
+  const bedrift = String(liste.getRange(e.range.getRow(), 1).getValue()).trim();
+  if (gArk && gArk.getLastRow() > 1 && bedrift) {
+    const v = gArk.getRange(2, 1, gArk.getLastRow() - 1, GODKJENNING_KOLONNER.length).getValues();
+    v.forEach((r, i) => {
+      if (String(r[G.status - 1]) === VENTER && /"type":"nett"/.test(r[G.data - 1]) &&
+        normaliserNavn_(r[G.bedrift - 1]) === normaliserNavn_(bedrift)) {
+        gArk.getRange(i + 2, G.status).setValue('Endret selv i Bedriftsliste');
+      }
+    });
+  }
 }

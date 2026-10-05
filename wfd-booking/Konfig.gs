@@ -221,6 +221,7 @@ Women’s Finance Day
   ARK_BEDRIFTSOVERSIKT: 'Bedriftsoversikt',
   ARK_IKKE_KONTAKTET: 'Ikke kontaktet',
   ARK_GJOREMAL: 'Gjøremål',
+  ARK_GODKJENNING: 'Til godkjenning',
 
   // Pakkene i år. Fjorårets pakke leses fra «(Premium)» / «(Partner)» i bedriftsnavnet.
   PAKKER: { premium: 'Premium partner', partner: 'Partner' },

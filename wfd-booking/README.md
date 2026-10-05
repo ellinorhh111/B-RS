@@ -32,7 +32,7 @@ installeres i kontoen der WFD-mailene kommer inn (NHH-kontoen din, s242961).
    (Alternativt: slett innholdet i `Kode.gs` og lag én skriptfil per fil i denne mappen (trykk **+** ved «Filer» → **Skript**),
    gi den samme navn og lim inn innholdet:
    `Konfig`, `Ark`, `AI`, `Innboks`, `Historikk`, `Oppfolging`, `Oppsett`, `Utseende`, `Bedriftsliste`, `Nettkontakter`,
-   `Avkryssing`.)
+   `Avkryssing`, `Godkjenning`.)
 4. Under **Prosjektinnstillinger** (tannhjulet): huk av for «Vis manifestfilen appsscript.json i redigeringsprogrammet»,
    og lim inn innholdet fra `appsscript.json`. Det setter riktig tidssone (Europe/Oslo).
 5. Lagre (Ctrl/Cmd + S).
@@ -164,20 +164,26 @@ Kontakter hentet fra nettet (oransje) tas ikke med før du har sjekket dem og sk
 Norsk tekst til .no-adresser, engelsk ellers. Tekstene ligger i `KONFIG.INVITASJON_NO` / `INVITASJON_EN`. Ingenting
 sendes automatisk. Til slutt får du en liste over bedrifter som heller ikke er kontaktet, men som mangler e-post.
 
-## Svar fra bedriftene: ja, nei eller «vi sjekker»
+## Til godkjenning: ingenting automatisk som er usikkert
 
-Skriptet leser bedriftens siste e-post og ser etter tydelige formuleringer, uten AI og uten kostnad:
+Systemet skiller mellom det det **vet** og det det **gjetter**:
 
-| Bedriften skriver f.eks. | Status blir |
+| Skrives rett inn (sikkert) | Går til «Til godkjenning» (usikkert) |
 |---|---|
-| «dessverre ikke mulighet», «må takke nei», «passer ikke», «unfortunately», «tyvärr» | **Takket nei** |
-| «vi blir gjerne med», «melder oss på», «ønsker å delta» | **Interessert** |
-| det samme + «Premium partner» / «som partner» | **Bekreftet** (og Pakke 2027 fylles ut) |
-| «sjekker internt», spørsmål, alt annet | **I dialog** |
+| Datoer, hvem som skrev sist, Trenger svar | Status tolket fra svaret: Takket nei, Interessert, Tilbud sendt, Bekreftet |
+| At e-post er sendt/mottatt: Kontaktet, Purret, I dialog | Pakke 2027 lest ut av e-post |
+| Det du har skrevet selv (Veien videre, Med, …) | Nye bedrifter fra Gmail (raden legges til, men må godkjennes) |
+| Tydelige koblinger (paretosec.com → Pareto) | E-post koblet fordi domenet bare *ligner* navnet (clarksons.com → «Clarksson») |
+| | Kontakter hentet fra nettet |
 
-Siste hendelse får «(tolket automatisk – sjekk)», og Neste steg sier hva du bør gjøre. Et «nei» vinner over et «ja».
-Er tolkningen feil, endrer du Status selv – det du skriver, flyttes ikke bakover av systemet.
-**WFD → Les svarene og oppdater status (ja/nei)** tolker svar som kom før dette fantes.
+I fanen **Til godkjenning** krysser du av **Godkjenn** (skrives inn i Booking/Bedriftsliste med en gang) eller **Avvis**
+(gjøres ikke, og foreslås ikke igjen; en avvist ny bedrift slettes fra Booking, en avvist kobling brukes aldri mer).
+Så lenge noe venter, er Status-cellen oransje i Booking og Bedriftsliste, Oversikt viser et varsel, og den daglige
+e-posten lister forslagene.
+
+Svarene tolkes uten AI ut fra tydelige formuleringer («dessverre ikke mulighet», «takke nei», «unfortunately» → Takket
+nei; «vi blir gjerne med», «melder oss på» → Interessert; det samme + «Premium partner» → Bekreftet). Et «nei» vinner
+over et «ja». **WFD → Les svarene og oppdater status (ja/nei)** lager forslag for svar som kom før dette fantes.
 
 ## Slik bruker du det i hverdagen
 

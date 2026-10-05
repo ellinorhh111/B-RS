@@ -48,7 +48,14 @@ function dagligOppsummering() {
     '• ' + navn(i) + ' – ' + dagerSiden_(celle_(tabell, i, 'sistKontakt')) + ' dager uten svar (' + celle_(tabell, i, 'status') + ')');
 
   const alleStatuser = KONFIG.STATUSER.concat([KONFIG.STATUS_NEI]);
+  const ventende = godkjenninger_().filter(g => g.status === VENTER);
   const linjer = [];
+  if (ventende.length) {
+    linjer.push('VENTER PÅ GODKJENNING (' + ventende.length + ') – se fanen «' + KONFIG.ARK_GODKJENNING + '»');
+    linjer.push(ventende.slice(0, 15).map(g => '• ' + g.data.bedrift + ': ' + g.data.type + ' → ' + g.data.verdi).join('\n') +
+      (ventende.length > 15 ? '\n• …' : ''));
+    linjer.push('');
+  }
   linjer.push('Status nå: ' + alleStatuser.map(s => s + ' ' + (tellinger[s] || 0)).join(' · '));
   linjer.push('');
   linjer.push('TRENGER SVAR FRA DEG (' + trengerSvar.length + ')');
@@ -63,7 +70,8 @@ function dagligOppsummering() {
   linjer.push('Arket: ' + hentRegneark_().getUrl());
 
   GmailApp.sendEmail(Session.getEffectiveUser().getEmail(),
-    'WFD booking: ' + trengerSvar.length + ' trenger svar, ' + forfalte.length + ' bør purres',
+    'WFD booking: ' + trengerSvar.length + ' trenger svar, ' + forfalte.length + ' bør purres' +
+      (ventende.length ? ', ' + ventende.length + ' til godkjenning' : ''),
     linjer.join('\n'));
 }
 

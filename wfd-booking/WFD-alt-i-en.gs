@@ -1,5 +1,5 @@
 // WFD booking-assistent – all koden i én fil. Lim inn i Kode.gs i Apps Script.
-// Generert fra Konfig, Ark, AI, Innboks, Historikk, Oppfolging, Oppsett, Utseende, Bedriftsliste, Nettkontakter, Avkryssing. Endre innstillingene i KONFIG øverst.
+// Generert fra Konfig, Ark, AI, Innboks, Historikk, Oppfolging, Oppsett, Utseende, Bedriftsliste, Nettkontakter, Avkryssing, Godkjenning. Endre innstillingene i KONFIG øverst.
 
 // ===================== Konfig.gs =====================
 /**
@@ -225,6 +225,7 @@ Women’s Finance Day
   ARK_BEDRIFTSOVERSIKT: 'Bedriftsoversikt',
   ARK_IKKE_KONTAKTET: 'Ikke kontaktet',
   ARK_GJOREMAL: 'Gjøremål',
+  ARK_GODKJENNING: 'Til godkjenning',
 
   // Pakkene i år. Fjorårets pakke leses fra «(Premium)» / «(Partner)» i bedriftsnavnet.
   PAKKER: { premium: 'Premium partner', partner: 'Partner' },
@@ -351,7 +352,8 @@ function nyRad_(tabell) {
  * Finner raden for en motpart. Rekkefølge: eksakt e-post, domene, bedriftsnavn.
  * Returnerer -1 hvis ingen treff.
  */
-function finnRad_(tabell, motpart, bedriftsnavn) {
+function finnRad_(tabell, motpart, bedriftsnavn, info) {
+  info = info || {};
   const epost = (motpart.epost || '').toLowerCase();
   for (let i = 0; i < tabell.rader.length; i++) {
     const liste = String(celle_(tabell, i, 'epost')).toLowerCase().split(/[,;\s]+/);
@@ -371,15 +373,23 @@ function finnRad_(tabell, motpart, bedriftsnavn) {
   // Domenet ligner bedriftsnavnet: nbim.no → «NBIM (Premium)», dnb.no → «DNB Carnegie», eqtpartners.com → «EQT (Partner)»,
   // odinfond.no → «Odin Forvaltning».
   if (!motpart.privat && motpart.domene) {
+    // Usikkert: koblingen må godkjennes, og en avvist kobling brukes aldri igjen.
     for (let i = 0; i < tabell.rader.length; i++) {
       const b = celle_(tabell, i, 'bedrift');
-      if (b && domeneLignerNavn_(motpart.domene, b)) return i;
+      if (b && domeneLignerNavn_(motpart.domene, b) && !erAvvist_(koblingsNokkel_(motpart.domene, b))) {
+        info.usikker = !tydeligDomene_(motpart.domene, b); // paretosec.com → Pareto er tydelig; clarksons.com → Clarksson er det ikke
+        return i;
+      }
     }
   }
   const navn = normaliserNavn_(bedriftsnavn);
   if (navn) {
     for (let i = 0; i < tabell.rader.length; i++) {
-      if (normaliserNavn_(celle_(tabell, i, 'bedrift')) === navn) return i;
+      const b = celle_(tabell, i, 'bedrift');
+      if (normaliserNavn_(b) === navn && !erAvvist_(koblingsNokkel_(motpart.domene || motpart.epost, b))) {
+        info.usikker = true;
+        return i;
+      }
     }
   }
   return -1;
@@ -395,6 +405,10 @@ function normaliserNavn_(navn) {
 
 function statusRang_(status) {
   return KONFIG.STATUSER.indexOf(String(status));
+}
+
+function koblingsNokkel_(domene, bedrift) {
+  return 'kobling|' + String(domene).toLowerCase() + '|' + normaliserNavn_(bedrift);
 }
 
 /** Ny status skal aldri flytte bedriften bakover, bortsett fra «Takket nei». */
@@ -895,7 +909,8 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
     return false;
   }
 
-  let rad = finnRad_(tabell, motpart, '');
+  const treff = {};
+  let rad = finnRad_(tabell, motpart, '', treff);
   // Historikk uten AI for bare kjente bedrifter: hopp raskt over alt annet.
   if (rad < 0 && tilstand.historikk && KONFIG.HISTORIKK_BARE_KJENTE && !(KONFIG.HISTORIKK_MED_AI && harAI_())) {
     lagreTrad_(trader, tradId, motpart.nokkel, siste.getDate(), alle.length);
@@ -931,7 +946,7 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   }
 
   // ---- Finn eller lag rad ----
-  if (rad < 0 && analyse && analyse.bedrift) rad = finnRad_(tabell, motpart, analyse.bedrift);
+  if (rad < 0 && analyse && analyse.bedrift) rad = finnRad_(tabell, motpart, analyse.bedrift, treff);
   const ny = rad < 0;
   // Historikken lager aldri nye rader for private adresser (gmail.com o.l.) – det er som regel ikke bedrifter.
   if (ny && tilstand.historikk && (KONFIG.HISTORIKK_BARE_KJENTE || motpart.privat)) {
@@ -944,6 +959,14 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
     settCelle_(tabell, rad, 'bedrift', (analyse && analyse.bedrift) || (motpart.privat ? motpart.navn || motpart.epost
       : navnFraBedriftsliste_(motpart.domene) || navnFraDomene_(motpart.domene)));
     settCelle_(tabell, rad, 'forsteKontakt', alle[0].getDate());
+    foreslaa_(celle_(tabell, rad, 'bedrift'), 'Ny bedrift fra Gmail (lagt til i Booking)', '', celle_(tabell, rad, 'bedrift'),
+      motpart.epost + ' – ' + siste.getSubject(), tradUrl_(tradId),
+      { type: 'nyBedrift', nokkel: 'ny|' + (motpart.privat ? motpart.epost : motpart.domene) });
+  } else if (treff.usikker) {
+    const b = celle_(tabell, rad, 'bedrift');
+    foreslaa_(b, 'E-post koblet til bedriften fordi domenet ligner navnet', motpart.epost, b,
+      'Avvis hvis ' + motpart.domene + ' ikke er ' + b + ' – da kobles domenet aldri til bedriften igjen. ' + siste.getSubject(),
+      tradUrl_(tradId), { type: 'kobling', domene: motpart.domene || motpart.epost, nokkel: koblingsNokkel_(motpart.domene || motpart.epost, b) });
   }
   if (!motpart.privat && !celle_(tabell, rad, 'domene')) settCelle_(tabell, rad, 'domene', motpart.domene);
 
@@ -958,28 +981,34 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   if (!(forste instanceof Date) || alle[0].getDate() < forste) settCelle_(tabell, rad, 'forsteKontakt', alle[0].getDate());
 
   // ---- Status og felter ----
-  let foreslatt;
-  // Uten AI: les bedriftens siste e-post etter tydelige ja/nei-formuleringer.
+  // Sikkert: at e-post er sendt/mottatt. Usikkert (tolket fra teksten): ja/nei/bekreftet – det går til godkjenning.
   const sisteDeres = alle.filter(m => !erFraOss_(m)).pop();
   const tolket = !analyse && sisteDeres ? tolkSvarUtenAI_(rensTekst_(sisteDeres.getPlainBody())) : null;
-  if (analyse) {
-    foreslatt = analyse.status;
-  } else if (tolket) {
-    foreslatt = tolket.status;
-  } else if (nyeFraDem || alle.some(m => !erFraOss_(m))) {
-    foreslatt = 'I dialog';
-  } else {
-    // Bare våre egne e-poster: to eller flere på rad uten svar = purret.
-    foreslatt = alle.length >= 2 ? 'Purret' : 'Kontaktet';
-  }
+  const tolketStatus = analyse ? analyse.status : (tolket ? tolket.status : '');
+  const faktisk = (nyeFraDem || sisteDeres) ? 'I dialog' : (alle.length >= 2 ? 'Purret' : 'Kontaktet');
+  const foreslatt = tolketStatus && USIKRE_STATUSER.indexOf(tolketStatus) < 0 ? tolketStatus : faktisk;
   const statusEtter = last ? statusFor : velgStatus_(statusFor, foreslatt);
+  let tilGodkjenning = '';
+  if (!last && sisteDeres && USIKRE_STATUSER.indexOf(tolketStatus) >= 0 && velgStatus_(statusEtter, tolketStatus) !== statusEtter) {
+    const tekstDeres = rensTekst_(sisteDeres.getPlainBody());
+    const pakke = (tolket && tolket.pakke) || (tolketStatus === 'Bekreftet' ? pakkeFraEpost_(tekstDeres) : '');
+    if (foreslaa_(bedrift, 'Status ut fra svaret' + (analyse ? ' (AI)' : ''), statusEtter, tolketStatus + (pakke ? ' · ' + pakke : ''),
+      tekstDeres, tradUrl_(tradId), { type: 'status', verdi: tolketStatus, pakke, nesteSteg: NESTE_STEG_ETTER_SVAR[tolketStatus] || '',
+        nokkel: 'status|' + normaliserNavn_(bedrift) + '|' + sisteDeres.getId() + '|' + tolketStatus }) ||
+      forslagStatus_('status|' + normaliserNavn_(bedrift) + '|' + sisteDeres.getId() + '|' + tolketStatus) === VENTER) {
+      tilGodkjenning = tolketStatus;
+    }
+  }
   if (!last) {
     settCelle_(tabell, rad, 'status', statusEtter);
     speilStatus_(tabell, rad, statusEtter);
     if (tabell.kol.pakke !== undefined && !celle_(tabell, rad, 'pakke')) {
       const fraDem = alle.filter(m => !erFraOss_(m)).map(m => rensTekst_(m.getPlainBody())).join('\n');
       const pakke = pakkeFraEpost_(fraDem);
-      if (pakke) settCelle_(tabell, rad, 'pakke', pakke);
+      if (pakke && tilGodkjenning !== 'Bekreftet') {
+        foreslaa_(bedrift, 'Pakke 2027 ut fra e-posten', '', pakke, setningMed_(fraDem, /premium|partner/i), tradUrl_(tradId),
+          { type: 'pakke', nokkel: 'pakke|' + normaliserNavn_(bedrift) + '|' + pakke });
+      }
     }
     const nyeFraDemTekst = nye.filter(m => !erFraOss_(m)).map(m => rensTekst_(m.getPlainBody())).join('\n');
     leggTilOnsker_(tabell, rad, onskerFraEpost_(nyeFraDemTekst));
@@ -997,8 +1026,8 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   settCelle_(tabell, rad, 'antall', (Number(celle_(tabell, rad, 'antall')) || 0) + nye.length);
 
   // ---- «Hvor står vi nå» – bare hvis denne tråden er den nyeste kontakten ----
-  const oppsummering = analyse ? analyse.oppsummering
-    : (tolket && sisteFraDem ? tolket.tekst + ' (tolket automatisk – sjekk) · ' : '') + enkelOppsummering_(siste);
+  const oppsummering = (tilGodkjenning ? 'Forslag: ' + tilGodkjenning + ' (venter på godkjenning) · ' : '') +
+    (analyse ? analyse.oppsummering : enkelOppsummering_(siste));
   if (erNyest) {
     settCelle_(tabell, rad, 'sistKontakt', siste.getDate());
     settCelle_(tabell, rad, 'retning', sisteFraDem ? 'Bedriften' : 'Oss');
@@ -1006,8 +1035,8 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
     const fersk = !tilstand.historikk || dagerSiden_(siste.getDate()) <= 14;
     settCelle_(tabell, rad, 'trengerSvar', sisteFraDem && fersk && (!analyse || analyse.trenger_svar) ? 'Ja' : 'Nei');
     settCelle_(tabell, rad, 'oppsummering', oppsummering);
-    if (analyse && analyse.neste_steg) settCelle_(tabell, rad, 'nesteSteg', analyse.neste_steg);
-    else if (tolket && sisteFraDem) settCelle_(tabell, rad, 'nesteSteg', NESTE_STEG_ETTER_SVAR[tolket.status] || '');
+    if (tilGodkjenning) settCelle_(tabell, rad, 'nesteSteg', 'Godkjenn eller avvis «' + tilGodkjenning + '» i fanen ' + KONFIG.ARK_GODKJENNING);
+    else if (analyse && analyse.neste_steg) settCelle_(tabell, rad, 'nesteSteg', analyse.neste_steg);
     else if (!sisteFraDem) settCelle_(tabell, rad, 'nesteSteg', 'Vent på svar – purr etter ' + KONFIG.PURR_ETTER_DAGER + ' dager');
     if (analyse && /^\d{4}-\d{2}-\d{2}$/.test(analyse.oppfolging_dato)) {
       const [a, m, d] = analyse.oppfolging_dato.split('-').map(Number);
@@ -1076,6 +1105,15 @@ const SVAR_JA = new RegExp([
   'v[æa]re med p[åa] dette', "we('d| would)? (love|be happy|be glad) to (join|participate|attend)", 'count us in',
   'happy to (join|participate)', 'we confirm', 'g[äa]rna (med|delta)',
 ].join('|'), 'i');
+
+// Statuser systemet bare kan gjette ut fra teksten – de foreslås, aldri satt direkte.
+const USIKRE_STATUSER = ['Takket nei', 'Interessert', 'Tilbud sendt', 'Bekreftet'];
+
+/** Første setning i teksten som passer mønsteret (til «Grunnlag» i Til godkjenning). */
+function setningMed_(tekst, monster) {
+  const setninger = String(tekst || '').split(/\n+|(?<=[.!?])\s+/);
+  return (setninger.find(x => monster.test(x)) || '').trim().slice(0, 250);
+}
 
 const NESTE_STEG_ETTER_SVAR = {
   'Takket nei': 'Send en kort takk, og spør om dere kan ta kontakt neste år',
@@ -1196,7 +1234,9 @@ function hentOnskerFraGmail_(tabell, maksMs) {
     const for_ = String(celle_(tabell, i, 'onsker')) + String(celle_(tabell, i, 'pakke'));
     if (tabell.kol.pakke !== undefined && !celle_(tabell, i, 'pakke')) {
       const p = pakkeFraEpost_(samlet);
-      if (p) settCelle_(tabell, i, 'pakke', p);
+      const b = celle_(tabell, i, 'bedrift');
+      if (p) foreslaa_(b, 'Pakke 2027 ut fra e-posten', '', p, setningMed_(samlet, /premium|partner/i), '',
+        { type: 'pakke', nokkel: 'pakke|' + normaliserNavn_(b) + '|' + p });
     }
     leggTilOnsker_(tabell, i, onskerFraEpost_(samlet));
     if (String(celle_(tabell, i, 'onsker')) + String(celle_(tabell, i, 'pakke')) !== for_) oppdatert++;
@@ -1227,18 +1267,19 @@ function lesSvarPaNytt() {
     if (!tolket) return;
     const etter = velgStatus_(for_, tolket.status);
     if (etter === for_) return;
-    settCelle_(tabell, i, 'status', etter);
-    speilStatus_(tabell, i, etter);
-    if (tolket.pakke && tabell.kol.pakke !== undefined && !celle_(tabell, i, 'pakke')) settCelle_(tabell, i, 'pakke', tolket.pakke);
-    if (NESTE_STEG_ETTER_SVAR[etter]) settCelle_(tabell, i, 'nesteSteg', NESTE_STEG_ETTER_SVAR[etter]);
     const bedrift = celle_(tabell, i, 'bedrift');
-    loggHendelse_([new Date(), bedrift, 'Fra bedriften', deres.getFrom(), deres.getSubject(),
-      tolket.tekst + ' (tolket automatisk – sjekk)', for_, etter, tradUrl_(tradId)]);
-    endret.push(bedrift + ': ' + for_ + ' → ' + etter);
+    const tekst = rensTekst_(deres.getPlainBody());
+    const nokkel = 'status|' + normaliserNavn_(bedrift) + '|' + deres.getId() + '|' + tolket.status;
+    if (!foreslaa_(bedrift, 'Status ut fra svaret', for_, tolket.status + (tolket.pakke ? ' · ' + tolket.pakke : ''), tekst,
+      tradUrl_(tradId), { type: 'status', verdi: tolket.status, pakke: tolket.pakke || '',
+        nesteSteg: NESTE_STEG_ETTER_SVAR[tolket.status] || '', nokkel })) return;
+    settCelle_(tabell, i, 'nesteSteg', 'Godkjenn eller avvis «' + tolket.status + '» i fanen ' + KONFIG.ARK_GODKJENNING);
+    endret.push(bedrift + ': ' + for_ + ' → ' + tolket.status + '?');
   });
   ui.alert(endret.length
-    ? 'Status ble oppdatert ut fra svarene (sjekk gjerne):\n\n• ' + endret.join('\n• ')
-    : 'Fant ingen tydelige ja- eller nei-svar som ikke allerede står i Booking.');
+    ? endret.length + ' forslag ligger nå i fanen «' + KONFIG.ARK_GODKJENNING + '». Ingenting er endret før du godkjenner:\n\n• ' +
+      endret.join('\n• ')
+    : 'Fant ingen nye tydelige ja- eller nei-svar.');
 }
 
 // ===================== Historikk.gs =====================
@@ -1371,7 +1412,14 @@ function dagligOppsummering() {
     '• ' + navn(i) + ' – ' + dagerSiden_(celle_(tabell, i, 'sistKontakt')) + ' dager uten svar (' + celle_(tabell, i, 'status') + ')');
 
   const alleStatuser = KONFIG.STATUSER.concat([KONFIG.STATUS_NEI]);
+  const ventende = godkjenninger_().filter(g => g.status === VENTER);
   const linjer = [];
+  if (ventende.length) {
+    linjer.push('VENTER PÅ GODKJENNING (' + ventende.length + ') – se fanen «' + KONFIG.ARK_GODKJENNING + '»');
+    linjer.push(ventende.slice(0, 15).map(g => '• ' + g.data.bedrift + ': ' + g.data.type + ' → ' + g.data.verdi).join('\n') +
+      (ventende.length > 15 ? '\n• …' : ''));
+    linjer.push('');
+  }
   linjer.push('Status nå: ' + alleStatuser.map(s => s + ' ' + (tellinger[s] || 0)).join(' · '));
   linjer.push('');
   linjer.push('TRENGER SVAR FRA DEG (' + trengerSvar.length + ')');
@@ -1386,7 +1434,8 @@ function dagligOppsummering() {
   linjer.push('Arket: ' + hentRegneark_().getUrl());
 
   GmailApp.sendEmail(Session.getEffectiveUser().getEmail(),
-    'WFD booking: ' + trengerSvar.length + ' trenger svar, ' + forfalte.length + ' bør purres',
+    'WFD booking: ' + trengerSvar.length + ' trenger svar, ' + forfalte.length + ' bør purres' +
+      (ventende.length ? ', ' + ventende.length + ' til godkjenning' : ''),
     linjer.join('\n'));
 }
 
@@ -1464,7 +1513,7 @@ function settOpp() {
   if (!(tidligere && ss.getSheetByName(tidligere))) {
     const aktiv = ss.getActiveSheet().getName();
     const interne = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT, KONFIG.ARK_IKKE_KONTAKTET,
-      KONFIG.ARK_GJOREMAL, KONFIG.ARK_TRADER];
+      KONFIG.ARK_GJOREMAL, KONFIG.ARK_GODKJENNING, KONFIG.ARK_TRADER];
     if (interne.indexOf(aktiv) >= 0) {
       ui.alert('Åpne fanen med booking-tabellen først, og velg menyvalget på nytt.');
       return;
@@ -1747,7 +1796,9 @@ function ryddArbeidsbok() {
     plan.push('Ny fane «' + KONFIG.ARK_GJOREMAL + '»: egne oppgaver med avkrysning, med de åpne oppgavene vi har nå');
   }
   plan.push('Oversikt blir et dashbord, «' + KONFIG.ARK_FJOR + '» sammenligner med fjoråret, og Logg får en ryddig tabell');
-  plan.push('Fanene sorteres: Oversikt, ' + KONFIG.ARK_GJOREMAL + ', ' + KONFIG.ARK_IKKE_KONTAKTET + ', ' + KONFIG.ARK_FJOR + ', ' + KONFIG.ARK_BEDRIFTSOVERSIKT + ', Booking, Bedriftsliste, Logg');
+  plan.push('Ny fane «' + KONFIG.ARK_GODKJENNING + '»: alt systemet gjetter på (ja/nei-svar, pakke, nye bedrifter, usikre koblinger, ' +
+    'kontakter fra nettet) venter der til du godkjenner eller avviser');
+  plan.push('Fanene sorteres: Oversikt, ' + KONFIG.ARK_GODKJENNING + ', ' + KONFIG.ARK_GJOREMAL + ', ' + KONFIG.ARK_IKKE_KONTAKTET + ', ' + KONFIG.ARK_FJOR + ', ' + KONFIG.ARK_BEDRIFTSOVERSIKT + ', Booking, Bedriftsliste, Logg');
 
   const svar = ui.alert('Gjør arbeidsboken ryddig',
     'Dette blir gjort:\n\n• ' + plan.join('\n• ') + '\n\nInnholdet i tabellene dine endres ikke. Fortsette?', ui.ButtonSet.YES_NO);
@@ -1806,7 +1857,7 @@ function ryddArbeidsbok() {
   const tomme = ss.getSheets().filter(a => {
     const n = a.getName();
     if (n === tabell.ark.getName() || [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT,
-      KONFIG.ARK_IKKE_KONTAKTET, KONFIG.ARK_GJOREMAL, KONFIG.ARK_TRADER].indexOf(n) >= 0) return false;
+      KONFIG.ARK_IKKE_KONTAKTET, KONFIG.ARK_GJOREMAL, KONFIG.ARK_GODKJENNING, KONFIG.ARK_TRADER].indexOf(n) >= 0) return false;
     if ((KONFIG.ANDRE_FANER || []).some(f => f.til === n)) return false;
     return a.getLastRow() <= 1;
   });
@@ -1882,6 +1933,12 @@ function gjorOmAutonavn_(tabell, par) {
   return antall;
 }
 
+/** Formel for betinget formatering: venter et forslag for bedriften i cellen på godkjenning? */
+function ventendeFormel_(celle) {
+  const G_ = "'" + KONFIG.ARK_GODKJENNING + "'!";
+  return `=COUNTIFS(INDIRECT("${G_}B:B"),$${celle.replace(/(\d+)$/, '')}${celle.match(/\d+$/)[0]},INDIRECT("${G_}J:J"),"${VENTER}")>0`;
+}
+
 /** Kolonnenummeret (1-basert) med denne overskriften i rad 1, eller 0. */
 function kolonneMedNavn_(ark, navn) {
   const h = ark.getRange(1, 1, 1, Math.max(ark.getLastColumn(), 1)).getValues()[0].map(v => String(v).trim());
@@ -1912,6 +1969,7 @@ function synkStatusFraEgneKolonner_(tabell) {
 function sorterFaner_(ss, tabell) {
   const rekkefolge = [
     [KONFIG.ARK_OVERSIKT, FANEFARGE.rapport],
+    [KONFIG.ARK_GODKJENNING, '#EA580C'],
     [KONFIG.ARK_GJOREMAL, FANEFARGE.rapport],
     [KONFIG.ARK_IKKE_KONTAKTET, FANEFARGE.rapport],
     [KONFIG.ARK_FJOR, FANEFARGE.rapport],
@@ -1931,6 +1989,7 @@ function sorterFaner_(ss, tabell) {
 
 /** Felles utseende på alle faner. Trygt å kjøre så ofte du vil. */
 function stilAlleFaner_(ss, tabell) {
+  godkjenningsArk_(ss); // må finnes før Oversikt og Booking viser hvor mange som venter
   stilBooking_(tabell);
   stilLogg_(ss);
   (KONFIG.ANDRE_FANER || []).forEach(f => { const a = ss.getSheetByName(f.til); if (a) stilEnkelListe_(a); });
@@ -1939,6 +1998,7 @@ function stilAlleFaner_(ss, tabell) {
   lagBedriftsoversikt_(ss, tabell);
   lagIkkeKontaktetFane_(ss);
   lagGjoremal_(ss);
+  stilGodkjenning_(godkjenningsArk_(ss));
   sorterFaner_(ss, tabell);
 }
 
@@ -2016,6 +2076,9 @@ function stilBooking_(tabell) {
   });
   const nye = [];
   const statusOmr = ark.getRange(2, kol('status'), maks, 1);
+  // Oransje status = et automatisk forslag for bedriften venter på godkjenning (står først, så den vinner).
+  nye.push(SpreadsheetApp.newConditionalFormatRule().whenFormulaSatisfied(ventendeFormel_(kolonneBokstav_(kol('bedrift')) + '2'))
+    .setBackground('#FDBA74').setFontColor('#7C2D12').setBold(true).setRanges([statusOmr]).build());
   Object.keys(STATUSFARGE).forEach(st => {
     nye.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo(st)
       .setBackground(STATUSFARGE[st][0]).setFontColor(STATUSFARGE[st][1]).setRanges([statusOmr]).build());
@@ -2143,7 +2206,18 @@ function lagOversikt_(ss, tabell) {
 
   // Status-fordeling (B–H)
   const statuser = KONFIG.STATUSER.concat([KONFIG.STATUS_NEI]);
-  ark.setRowHeight(7, 20);
+  // Varsel når automatiske forslag venter på godkjenning.
+  ark.setRowHeight(7, 26);
+  const varsel = ark.getRange(7, 2, 1, 12);
+  varsel.merge();
+  varsel.getCell(1, 1).setFormula(`=IFERROR(LET(n,COUNTIF('${KONFIG.ARK_GODKJENNING}'!J:J,"${VENTER}"),` +
+    `IF(n=0,"✓ Ingen automatiske endringer venter på godkjenning","⚠ "&n&" automatiske endringer venter på godkjenning – se fanen «${KONFIG.ARK_GODKJENNING}»")),"")`);
+  varsel.setFontWeight('bold').setHorizontalAlignment('left');
+  ark.setConditionalFormatRules(ark.getConditionalFormatRules().concat([
+    SpreadsheetApp.newConditionalFormatRule().whenTextStartsWith('⚠').setBackground('#FFEDD5').setFontColor('#9A3412')
+      .setRanges([varsel]).build(),
+    SpreadsheetApp.newConditionalFormatRule().whenTextStartsWith('✓').setFontColor('#166534').setRanges([varsel]).build(),
+  ]));
   ark.getRange('B8').setValue('Status').setFontSize(13).setFontWeight('bold');
   const forste = 9;
   const sist = forste + statuser.length - 1;
@@ -2660,8 +2734,8 @@ function fortsettBedriftsliste() {
     const rad = pos + 2;
     const bedrift = navn[pos];
     if (bedrift && !fet[pos]) {
-      const host = sisteEpostOm_(bedrift, 'after:' + grense);
-      const for_ = sisteEpostOm_(bedrift, 'before:' + grense);
+      const host = sjekketTreff_(bedrift, sisteEpostOm_(bedrift, 'after:' + grense));
+      const for_ = sjekketTreff_(bedrift, sisteEpostOm_(bedrift, 'before:' + grense));
       const nyest = host || for_;
       ark.getRange(rad, kol.host + 1).setValue(host ? host.dato : '');
       ark.getRange(rad, kol.svar + 1).setValue(host ? (host.svar ? 'Ja' : 'Nei') : '');
@@ -2830,6 +2904,8 @@ function stilBedriftsliste_(ark, kol) {
   ark.setConditionalFormatRules(beholdes.concat([
     regel().whenFormulaSatisfied(kategoriFormel).setBackground('#EEF2FF').setFontColor('#3730A3').setBold(true)
       .setRanges([ark.getRange(2, 1, maks, sisteKol)]).build(),
+    regel().whenFormulaSatisfied(ventendeFormel_('A2')).setBackground('#FDBA74').setFontColor('#7C2D12').setBold(true)
+      .setRanges([status]).build(),
     regel().whenTextEqualTo('Kontaktet i høst').setBackground('#DCFCE7').setFontColor('#166534').setRanges([status]).build(),
     regel().whenTextEqualTo('Kontaktet (manuelt)').setBackground('#DCFCE7').setFontColor('#166534').setItalic(true).setRanges([status]).build(),
     regel().whenTextEqualTo('Kontaktet tidligere').setBackground('#FEF3C7').setFontColor('#92400E').setRanges([status]).build(),
@@ -2874,6 +2950,29 @@ function sokeNavn_(navn) {
  *  - navnet står i emnefeltet.
  * Returnerer {dato, emne, url, kontakt, svar} eller null.
  */
+/**
+ * Usikre Gmail-treff (navnet står ikke tydelig i domenet) går til godkjenning. Avviste treff regnes ikke med.
+ * Venter treffet på godkjenning, regnes det med i mellomtiden (så bedriften ikke inviteres to ganger).
+ */
+function sjekketTreff_(bedrift, treff) {
+  if (!treff || !treff.usikker) return treff;
+  const domene = domeneAv_(treff.kontakt || '') || 'ukjent';
+  const nokkel = 'bl|' + normaliserNavn_(bedrift) + '|' + domene;
+  if (erAvvist_(nokkel)) return null;
+  foreslaa_(sokeNavn_(bedrift), 'Bedriftsliste: Gmail-treff der navnet bare ligner', '', treff.kontakt || '(ingen adresse)',
+    'Emne: ' + treff.emne + '. Avvis hvis e-posten ikke gjelder denne bedriften – da vises den som ikke kontaktet.', treff.url,
+    { type: 'blKobling', domene, nokkel });
+  return treff;
+}
+
+/** Tydelig treff: domenet er navnet (nbim.no → NBIM, paretosec.com → Pareto), ikke bare ligner det. */
+function tydeligDomene_(domene, navn) {
+  const stamme = utenAksent_(normaliserNavn_(String(domene).split('.').slice(-2, -1)[0] || ''));
+  const n = utenAksent_(normaliserNavn_(navn));
+  if (stamme.length < 3 || !n) return false;
+  return stamme === n || n.indexOf(stamme) === 0 || (n.length >= 4 && stamme.indexOf(n) === 0);
+}
+
 function sisteEpostOm_(bedrift, periode) {
   const navn = sokeNavn_(bedrift);
   if (navn.length < 3) return null;
@@ -2885,20 +2984,25 @@ function sisteEpostOm_(bedrift, periode) {
     if (f) return f;
   }
   const funnet = sokTraderOm_('"' + navn + '"', navn, periode, false);
-  if (funnet) return funnet;
+  if (funnet) {
+    funnet.usikker = !tydeligDomene_(domeneAv_(funnet.kontakt || ''), navn);
+    return funnet;
+  }
   // Reserve 1: første ord i navnet («ODIN Forvaltning» → «Odin»), men bare treff der domenet ligner navnet
   // (odinfond.no), så vi ikke får tilfeldige treff på vanlige ord.
   const forste = navn.split(/\s+/)[0];
   if (forste.length >= 4 && forste.toLowerCase() !== navn.toLowerCase()) {
     const f = sokTraderOm_('"' + forste + '"', navn, periode, true);
-    if (f) return f;
+    if (f) { f.usikker = !tydeligDomene_(domeneAv_(f.kontakt || ''), navn); return f; }
   }
   // Reserve 2: navnet står ikke i e-posten i det hele tatt, eller er stavet annerledes i arket
   // («Clarksson» → clarksons.com, «EQT group» → eqtpartners.com, «Søderberg & Partners» → soderbergpartnerswealth.no).
   // Søk på domenene WFD faktisk har skrevet med i perioden, som ligner navnet.
   const domener = domenerIPeriode_(periode).filter(d => domeneLignerNavn_(d, navn)).slice(0, 5);
   if (!domener.length) return null;
-  return sokTraderOm_('{' + domener.map(d => 'from:' + d + ' to:' + d + ' cc:' + d).join(' ') + '}', navn, periode, true);
+  const f2 = sokTraderOm_('{' + domener.map(d => 'from:' + d + ' to:' + d + ' cc:' + d).join(' ') + '}', navn, periode, true);
+  if (f2) f2.usikker = !tydeligDomene_(domeneAv_(f2.kontakt || ''), navn);
+  return f2;
 }
 
 /** Små bokstaver uten aksenter: «Søderberg» → «soderberg», så navn kan sammenlignes med domener. */
@@ -3257,6 +3361,10 @@ function fyllNettkontakter_(ark, kol) {
     ark.getRange(rad, kol.annen + 1).setValue(k.kontakt)
       .setNote((k.merknad || '') + (k.kilde ? '\nKilde: ' + k.kilde : ''));
     ark.getRange(rad, kol.kilde + 1).setValue(k.kilde || 'nett');
+    if (/@/.test(k.kontakt)) {
+      foreslaa_(sokeNavn_(b), 'Kontakt hentet fra nettet', '', k.kontakt, (k.merknad || '') + (k.kilde ? ' · Kilde: ' + k.kilde : ''), '',
+        { type: 'nett', nokkel: 'nett|' + nokkel + '|' + k.kontakt.toLowerCase() });
+    }
     fylt[nokkel] = true;
     n++;
   });
@@ -3272,6 +3380,7 @@ function fyllNettkontakter_(ark, kol) {
  *  Oversikt → «Bør purres» ✓              Status blir «Purret» og «Sist kontakt» i dag i Booking.
  *  Ikke kontaktet ✓                       «Har kontaktet» krysses av i Bedriftsliste (kontaktet på annen måte).
  *  Bedriftsliste → «Annen kontakt»        Skriver du inn en kontakt selv, er den ikke lenger «hentet fra nett» (oransje).
+ *  Til godkjenning → Godkjenn / Avvis     Forslaget skrives inn (eller forkastes). Se Godkjenning.gs.
  *
  * onEdit er en enkel trigger: den kjører av seg selv når noen endrer en celle, uten oppsett. Den bruker bare
  * regnearket som er åpent (ikke Gmail), og hver endring logges i Logg.
@@ -3282,6 +3391,7 @@ function onEdit(e) {
     const navn = e.range.getSheet().getName();
     if (navn === KONFIG.ARK_OVERSIKT) return hakeOversikt_(e);
     if (navn === KONFIG.ARK_IKKE_KONTAKTET) return hakeIkkeKontaktet_(e);
+    if (navn === KONFIG.ARK_GODKJENNING) return hakeGodkjenning_(e);
     const liste = bedriftslisteArk_(e.source);
     if (liste && navn === liste.getName()) return endretBedriftsliste_(e, liste);
   } catch (feil) {
@@ -3378,4 +3488,260 @@ function endretBedriftsliste_(e, liste) {
   if (e.range.getColumn() !== h.indexOf(BL_KOLONNER.annen) + 1 || e.range.getRow() < 2) return;
   const kKilde = h.indexOf(BL_KOLONNER.kilde) + 1;
   if (kKilde) liste.getRange(e.range.getRow(), kKilde).clearContent();
+  // Et ventende «kontakt fra nett»-forslag for bedriften er da avgjort av deg.
+  const gArk = e.source.getSheetByName(KONFIG.ARK_GODKJENNING);
+  const bedrift = String(liste.getRange(e.range.getRow(), 1).getValue()).trim();
+  if (gArk && gArk.getLastRow() > 1 && bedrift) {
+    const v = gArk.getRange(2, 1, gArk.getLastRow() - 1, GODKJENNING_KOLONNER.length).getValues();
+    v.forEach((r, i) => {
+      if (String(r[G.status - 1]) === VENTER && /"type":"nett"/.test(r[G.data - 1]) &&
+        normaliserNavn_(r[G.bedrift - 1]) === normaliserNavn_(bedrift)) {
+        gArk.getRange(i + 2, G.status).setValue('Endret selv i Bedriftsliste');
+      }
+    });
+  }
+}
+
+// ===================== Godkjenning.gs =====================
+/**
+ * «Til godkjenning»: alt systemet gjetter på, havner her i stedet for å bli skrevet rett inn.
+ *
+ *   Sikkert (skrives rett inn):  datoer, hvem som skrev sist, Trenger svar, at e-post er sendt/mottatt
+ *                                (Kontaktet / Purret / I dialog), og det du har skrevet selv.
+ *   Usikkert (til godkjenning):  status tolket fra teksten (Takket nei, Interessert, Bekreftet …), pakke fra e-post,
+ *                                nye bedrifter fra Gmail, e-post koblet til en bedrift fordi domenet bare ligner navnet,
+ *                                og kontakter hentet fra nettet.
+ *
+ * Du krysser av i «Godkjenn» eller «Avvis». Godkjent blir skrevet inn i Booking/Bedriftsliste med en gang, avvist
+ * blir ikke gjort (og foreslås ikke igjen). Så lenge noe venter, er Status-cellen til bedriften oransje, og Oversikt
+ * viser hvor mange som venter.
+ */
+
+const GODKJENNING_KOLONNER = ['Lagt til', 'Bedrift', 'Hva', 'Nå', 'Forslag', 'Grunnlag', 'Gmail', 'Godkjenn', 'Avvis', 'Status', 'Data'];
+const G = { tid: 1, bedrift: 2, hva: 3, naa: 4, forslag: 5, grunnlag: 6, gmail: 7, ja: 8, nei: 9, status: 10, data: 11 };
+const VENTER = 'Venter';
+
+function godkjenningsArk_(ss) {
+  const navn = KONFIG.ARK_GODKJENNING;
+  let ark = ss.getSheetByName(navn);
+  if (!ark) {
+    ark = ss.insertSheet(navn);
+    ark.getRange(1, 1, 1, GODKJENNING_KOLONNER.length).setValues([GODKJENNING_KOLONNER]);
+    stilGodkjenning_(ark);
+  }
+  return ark;
+}
+
+function stilGodkjenning_(ark) {
+  const n = GODKJENNING_KOLONNER.length;
+  ark.getRange(1, 1, 1, n).setBackground('#C2410C').setFontColor('#FFFFFF').setFontWeight('bold').setVerticalAlignment('middle');
+  ark.setRowHeight(1, 30);
+  ark.setFrozenRows(1);
+  [95, 170, 210, 130, 170, 380, 70, 80, 70, 110, 60].forEach((b, i) => ark.setColumnWidth(i + 1, b));
+  ark.getRange(1, G.ja).setNote('Kryss av for å godkjenne. Endringen skrives inn i Booking/Bedriftsliste med en gang.');
+  ark.getRange(1, G.nei).setNote('Kryss av for å avvise. Endringen blir ikke gjort, og systemet foreslår den ikke igjen.');
+  ark.hideColumns(G.data);
+  const maks = Math.max(ark.getMaxRows() - 1, 1);
+  ark.getRange(2, G.tid, maks, 1).setNumberFormat('d. mmm hh:mm').setFontColor('#6B7280');
+  ark.getRange(2, G.bedrift, maks, 1).setFontWeight('bold');
+  ark.getRange(2, G.grunnlag, maks, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontColor('#6B7280');
+  ark.getRange(2, G.ja, maks, 2).setHorizontalAlignment('center');
+  const regel = () => SpreadsheetApp.newConditionalFormatRule();
+  const rader = ark.getRange(2, 1, maks, G.status);
+  ark.setConditionalFormatRules([
+    regel().whenFormulaSatisfied('=AND($B2<>"",$J2<>"' + VENTER + '")').setFontColor('#9CA3AF').setRanges([rader]).build(),
+    regel().whenTextEqualTo(VENTER).setBackground('#FFEDD5').setFontColor('#9A3412').setBold(true)
+      .setRanges([ark.getRange(2, G.status, maks, 1)]).build(),
+    regel().whenFormulaSatisfied('=$J2="' + VENTER + '"').setBackground('#FFF7ED').setRanges([ark.getRange(2, G.forslag, maks, 1)]).build(),
+  ]);
+  try { if (!ark.getFilter()) ark.getRange(1, 1, Math.max(ark.getLastRow(), 2), n).createFilter(); } catch (e) { /* ikke viktig */ }
+}
+
+let GODKJENNINGER_ = null; // per kjøring: alle forslag (for å unngå dobbelt og for å respektere avvisninger)
+
+function godkjenninger_() {
+  if (GODKJENNINGER_) return GODKJENNINGER_;
+  GODKJENNINGER_ = [];
+  try {
+    const ark = hentRegneark_().getSheetByName(KONFIG.ARK_GODKJENNING);
+    if (ark && ark.getLastRow() > 1) {
+      ark.getRange(2, 1, ark.getLastRow() - 1, GODKJENNING_KOLONNER.length).getValues().forEach(r => {
+        let data = {};
+        try { data = JSON.parse(r[G.data - 1] || '{}'); } catch (e) { /* hopp over */ }
+        GODKJENNINGER_.push({ status: String(r[G.status - 1]), data });
+      });
+    }
+  } catch (e) { /* ingen fane ennå */ }
+  return GODKJENNINGER_;
+}
+
+/** Finnes det allerede et forslag med samme nøkkel (venter, godkjent eller avvist)? Returnerer statusen eller ''. */
+function forslagStatus_(nokkel) {
+  const f = godkjenninger_().filter(g => g.data.nokkel === nokkel).pop();
+  return f ? f.status : '';
+}
+
+function erAvvist_(nokkel) {
+  return /^Avvist/.test(forslagStatus_(nokkel));
+}
+
+/**
+ * Legger et forslag i «Til godkjenning» (hvis det ikke finnes fra før). data.nokkel må være unik for forslaget.
+ * data.type: status | pakke | nyBedrift | kobling | blKobling | nett
+ */
+function foreslaa_(bedrift, hva, naa, forslag, grunnlag, gmailUrl, data) {
+  if (!data || !data.nokkel || forslagStatus_(data.nokkel)) return false;
+  data.bedrift = bedrift;
+  data.verdi = data.verdi === undefined ? forslag : data.verdi;
+  const ark = godkjenningsArk_(hentRegneark_());
+  const rad = Math.max(ark.getLastRow(), 1) + 1;
+  ark.getRange(rad, 1, 1, GODKJENNING_KOLONNER.length).setValues([[new Date(), bedrift, hva, naa || '', forslag || '',
+    String(grunnlag || '').replace(/\s+/g, ' ').slice(0, 300), '', false, false, VENTER, JSON.stringify(data)]]);
+  if (gmailUrl) ark.getRange(rad, G.gmail).setFormula('=HYPERLINK("' + gmailUrl + '","Åpne")');
+  ark.getRange(rad, G.ja, 1, 2).insertCheckboxes();
+  godkjenninger_().push({ status: VENTER, data });
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Avkrysning i «Til godkjenning» (kalles fra onEdit, uten Gmail)
+// ---------------------------------------------------------------------------
+
+function hakeGodkjenning_(e) {
+  if (String(e.value).toUpperCase() !== 'TRUE') return;
+  const c = e.range.getColumn();
+  const r = e.range.getRow();
+  if (r < 2 || (c !== G.ja && c !== G.nei)) return;
+  const ark = e.range.getSheet();
+  const rad = ark.getRange(r, 1, 1, GODKJENNING_KOLONNER.length).getValues()[0];
+  if (String(rad[G.status - 1]) !== VENTER) { e.range.setValue(false); return; }
+  let data = {};
+  try { data = JSON.parse(rad[G.data - 1] || '{}'); } catch (err) { /* tom */ }
+  const godkjent = c === G.ja;
+  let merknad = '';
+  try {
+    merknad = utforBeslutning_(e.source, data, godkjent) || '';
+  } catch (err) {
+    merknad = 'Feil: ' + err.message;
+  }
+  const dato = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'd.M');
+  ark.getRange(r, G.status).setValue((godkjent ? 'Godkjent ' : 'Avvist ') + dato + (merknad ? ' – ' + merknad : ''));
+  ark.getRange(r, godkjent ? G.nei : G.ja).setValue(false);
+  loggManuelt_(e.source, data.bedrift || rad[G.bedrift - 1], (godkjent ? 'Godkjent: ' : 'Avvist: ') + rad[G.hva - 1] + ' → ' + rad[G.forslag - 1],
+    rad[G.naa - 1], godkjent ? rad[G.forslag - 1] : rad[G.naa - 1]);
+}
+
+/** Gjør det som er godkjent (eller rydder opp etter en avvisning). Returnerer en kort merknad eller ''. */
+function utforBeslutning_(ss, data, godkjent) {
+  const booking = bookingArkFra_(ss);
+  const liste = bedriftslisteArk_(ss);
+  const bRad = () => finnRadPaaNavn_(booking, bookingKol_(overskrifter_(booking), 'bedrift'), data.bedrift);
+
+  switch (data.type) {
+    case 'status': {
+      if (!godkjent) return '';
+      const h = overskrifter_(booking);
+      const r = bRad();
+      if (!r) return 'fant ikke bedriften i Booking';
+      settHvis_(booking, r, bookingKol_(h, 'status'), data.verdi);
+      if (data.pakke) settHvisTom_(booking, r, bookingKol_(h, 'pakke'), data.pakke);
+      if (data.nesteSteg) settHvis_(booking, r, bookingKol_(h, 'nesteSteg'), data.nesteSteg);
+      speilEgneKolonner_(booking, h, r, data.verdi);
+      return '';
+    }
+    case 'pakke': {
+      if (!godkjent) return '';
+      const r = bRad();
+      if (!r) return 'fant ikke bedriften i Booking';
+      settHvis_(booking, r, bookingKol_(overskrifter_(booking), 'pakke'), data.verdi);
+      return '';
+    }
+    case 'nyBedrift': {
+      if (godkjent) return '';
+      const r = bRad();
+      if (!r) return '';
+      booking.deleteRow(r);
+      return 'raden er slettet fra Booking';
+    }
+    case 'kobling': {
+      if (godkjent) return '';
+      // Fjern domenet fra raden, så e-post fra dette domenet ikke kobles til bedriften igjen.
+      const h = overskrifter_(booking);
+      const r = bRad();
+      const k = bookingKol_(h, 'domene');
+      if (r && k && String(booking.getRange(r, k).getValue()).toLowerCase() === String(data.domene).toLowerCase()) {
+        booking.getRange(r, k).clearContent();
+      }
+      return 'sjekk Sist kontakt og Siste hendelse for bedriften';
+    }
+    case 'blKobling': {
+      if (godkjent || !liste) return '';
+      // Tøm Gmail-kolonnene for bedriften, så den vises som ikke kontaktet til neste oppdatering.
+      const h = overskrifter_(liste);
+      const rader = raderPaaNavn_(liste, 1, data.bedrift);
+      ['host', 'svar', 'tidligere', 'epost', 'trad'].forEach(k => {
+        const kol = h.indexOf(BL_KOLONNER[k]) + 1;
+        if (kol) rader.forEach(r => liste.getRange(r, kol).clearContent());
+      });
+      return '';
+    }
+    case 'nett': {
+      if (!liste) return '';
+      const h = overskrifter_(liste);
+      const kKilde = h.indexOf(BL_KOLONNER.kilde) + 1;
+      const kAnnen = h.indexOf(BL_KOLONNER.annen) + 1;
+      raderPaaNavn_(liste, 1, data.bedrift).forEach(r => {
+        if (kKilde) liste.getRange(r, kKilde).clearContent(); // godkjent: blir «lagt inn selv» (blå)
+        if (!godkjent && kAnnen && String(liste.getRange(r, kAnnen).getValue()) === String(data.verdi)) {
+          liste.getRange(r, kAnnen).clearContent();
+        }
+      });
+      return '';
+    }
+  }
+  return '';
+}
+
+function overskrifter_(ark) {
+  return ark ? ark.getRange(1, 1, 1, Math.max(ark.getLastColumn(), 1)).getValues()[0].map(v => String(v).trim()) : [];
+}
+
+function raderPaaNavn_(ark, kol, navn) {
+  if (!ark || !kol || ark.getLastRow() < 2) return [];
+  const ut = [];
+  ark.getRange(2, kol, ark.getLastRow() - 1, 1).getValues().forEach((v, i) => {
+    if (String(v[0]).trim() === String(navn).trim()) ut.push(i + 2);
+  });
+  return ut;
+}
+
+function finnRadPaaNavn_(ark, kol, navn) {
+  return raderPaaNavn_(ark, kol, navn)[0] || 0;
+}
+
+function settHvis_(ark, rad, kol, verdi) {
+  if (ark && rad && kol && verdi !== undefined && verdi !== '') ark.getRange(rad, kol).setValue(verdi);
+}
+
+function settHvisTom_(ark, rad, kol, verdi) {
+  if (ark && rad && kol && !String(ark.getRange(rad, kol).getValue()).trim()) ark.getRange(rad, kol).setValue(verdi);
+}
+
+/** Speiler en godkjent status til Invitasjon sendt / Respons / Med (bare tomme celler, som ellers). */
+function speilEgneKolonner_(ark, h, rad, status) {
+  const sp = KONFIG.SPEIL;
+  if (!sp) return;
+  const kol = navn => h.indexOf(navn) + 1;
+  const nei = status === KONFIG.STATUS_NEI;
+  const sett = (navn, verdi, erstatt) => {
+    const k = kol(navn);
+    if (!k) return;
+    const naa = String(ark.getRange(rad, k).getValue()).trim();
+    if (!naa || erstatt.indexOf(naa) >= 0) ark.getRange(rad, k).setValue(verdi);
+  };
+  sett(sp.invitasjonSendt, sp.ja, [sp.nei]);
+  if (status !== 'Kontaktet') sett(sp.respons, sp.ja, [sp.nei]);
+  if (status === 'Bekreftet') sett(sp.med, sp.ja, [sp.venter]);
+  else if (nei) sett(sp.med, sp.nei, [sp.venter]);
+  else if (status === 'Interessert' || status === 'Tilbud sendt') sett(sp.med, sp.venter, []);
 }
