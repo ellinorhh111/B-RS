@@ -56,10 +56,9 @@ function oppdaterBedriftsliste() {
     '\n\nKolonnene og innholdet ditt endres ikke. Det kan ta noen minutter; du får en e-post når det er ferdig. Fortsette?',
     ui.ButtonSet.YES_NO);
   if (svar !== ui.Button.YES) return;
-  // Tøm systemkolonnene først, inkludert gamle avkrysningsbokser, så kategorirader og tomme rader blir rene.
-  const kol = sikreBlKolonner_(ark);
-  const maks = Math.max(ark.getMaxRows() - 1, 1);
-  BL_AUTO.forEach(k => ark.getRange(2, kol[k] + 1, maks, 1).clearDataValidations().clearContent());
+  // Kolonnene tømmes ikke på forhånd: hver rad skrives over når den er sjekket. Stopper kjøringen underveis,
+  // står de gamle opplysningene igjen i stedet for at alle bedriftene ser ukontaktet ut.
+  sikreBlKolonner_(ark);
   if (!ss.getSheetByName(KONFIG.ARK_IKKE_KONTAKTET)) lagIkkeKontaktetFane_(ss);
   startBlKjoring_();
   fortsettBedriftsliste();
@@ -558,6 +557,16 @@ function alleredeInvitertIBooking_() {
   return ut;
 }
 
+/**
+ * Ikke kontaktet = Kontaktstatus sier «Ikke kontaktet» (den tar med status fra Booking, «Har kontaktet» og «Ikke aktuell»).
+ * Uten Kontaktstatus: ingen e-post i høst, ikke avkrysset.
+ */
+function erIkkeKontaktet_(r, kol) {
+  const status = kol.kontaktstatus !== undefined ? String(r[kol.kontaktstatus]).trim() : '';
+  if (status) return status === 'Ikke kontaktet';
+  return !r[kol.host] && r[kol.manuelt] !== true && r[kol.ikkeAktuell] !== true;
+}
+
 /** Finner kandidatene: ikke kontaktet i høst, har e-post, ikke invitert i Booking, ingen utkast fra før. */
 function invitasjonsKandidater_(ark) {
   const kol = sikreBlKolonner_(ark);
@@ -576,7 +585,7 @@ function invitasjonsKandidater_(ark) {
     const annen = (String(r[kol.annen]).match(/[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/) || [''])[0];
     const epost = (String(r[kol.epost]).trim() || annen).toLowerCase();
     const fraNett = !String(r[kol.epost]).trim() && !!String(r[kol.kilde]).trim();
-    if (!bedrift || fet[i] || !epost || r[kol.host] || r[kol.manuelt] === true || r[kol.ikkeAktuell] === true) return;
+    if (!bedrift || fet[i] || !epost || !erIkkeKontaktet_(r, kol)) return;
     if (iBooking[normaliserNavn_(sokeNavn_(bedrift))]) return;
     if (utkastTil[epost]) return;
     utkastTil[epost] = true; // samme adresse kan stå på flere rader (f.eks. under to kategorier)
@@ -614,6 +623,11 @@ function lagInvitasjoner() {
   const ui = SpreadsheetApp.getUi();
   const ark = bedriftslisteArk_(ss);
   if (!ark) { ui.alert('Fant ikke fanen Bedriftsliste.'); return; }
+  if (PropertiesService.getScriptProperties().getProperty('BL_POS') !== null) {
+    ui.alert('Bedriftsliste oppdateres fra Gmail akkurat nå, så listen over hvem som er kontaktet er ikke komplett. ' +
+      'Vent til du får e-posten «Bedriftsliste er oppdatert fra Gmail», og prøv igjen.');
+    return;
+  }
 
   // Kontakter hentet fra nettet (oransje) brukes ikke før du har sjekket dem og skrevet dem inn selv.
   const alle = invitasjonsKandidater_(ark);
@@ -680,7 +694,7 @@ function utenKontaktperson_(ark) {
   const verdier = ark.getRange(2, 1, antall, ark.getLastColumn()).getValues();
   const fet = ark.getRange(2, 1, antall, 1).getFontWeights().map(r => r[0] === 'bold');
   return verdier.filter((r, i) => String(r[0]).trim() && !fet[i] && !r[kol.epost] && !/@/.test(String(r[kol.annen])) &&
-    !r[kol.host] && r[kol.manuelt] !== true && r[kol.ikkeAktuell] !== true).map(r => String(r[0]).trim());
+    erIkkeKontaktet_(r, kol)).map(r => String(r[0]).trim());
 }
 
 /** Kjøres automatisk hver natt, så «Ikke kontaktet» alltid er oppdatert. */
