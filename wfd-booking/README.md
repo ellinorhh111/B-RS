@@ -31,7 +31,8 @@ installeres i kontoen der WFD-mailene kommer inn (NHH-kontoen din, s242961).
 3. **Enklest:** slett alt i `Kode.gs` og lim inn hele `WFD-alt-i-en.gs`.
    (Alternativt: slett innholdet i `Kode.gs` og lag én skriptfil per fil i denne mappen (trykk **+** ved «Filer» → **Skript**),
    gi den samme navn og lim inn innholdet:
-   `Konfig`, `Ark`, `AI`, `Innboks`, `Historikk`, `Oppfolging`, `Oppsett`, `Utseende`, `Bedriftsliste`.)
+   `Konfig`, `Ark`, `AI`, `Innboks`, `Historikk`, `Oppfolging`, `Oppsett`, `Utseende`, `Bedriftsliste`, `Nettkontakter`,
+   `Avkryssing`.)
 4. Under **Prosjektinnstillinger** (tannhjulet): huk av for «Vis manifestfilen appsscript.json i redigeringsprogrammet»,
    og lim inn innholdet fra `appsscript.json`. Det setter riktig tidssone (Europe/Oslo).
 5. Lagre (Ctrl/Cmd + S).
@@ -104,22 +105,49 @@ Fanen **Bedriftsoversikt** viser hvem som er med (bekreftet øverst, så interes
 fra bedriftens egne e-poster der de nevner workshop, dato, stand, panel o.l. Nye ønsker legges til, ingenting
 slettes, og du kan redigere fritt.
 
-## Bedriftsliste fra Gmail
+## Bedriftsliste
 
-**WFD → Oppdater Bedriftsliste fra Gmail** søker etter hver bedrift i e-post til/fra WFD-adressen og fyller
-*Kontaktet høst 2026*, *Svar fra bedrift*, *Kontaktet tidligere*, *E-post (fra Gmail)* og *Siste relevante e-post*
-(lenke). En tråd teller bare når motpartens domene ligner navnet, når e-posten inviterer bedriften ved navn, eller
-når navnet står i emnet – så bedrifter som bare er nevnt i andres e-poster ikke gir feil treff. Står navnet
-annerledes i arket enn i e-posten («Clarksson», «EQT group», «Hitec vision»), finnes bedriften likevel via domenene
-WFD har skrevet med (clarksons.com, eqtpartners.com, hitecvision.com). Kategorirader i fet
-skrift hoppes over.
+Bedriftsliste er oversikten over alle finansbedrifter dere synes er relevante. Rett etter bedriftsnavnet står:
+
+| Kolonne | Hva |
+|---|---|
+| Kategori | Fra nærmeste fete rad over (Private Equity, Venture …). Kan endres. |
+| Kontaktstatus | Kontaktet i høst (grønn) · Kontaktet (manuelt) · Kontaktet tidligere (gul) · Ikke kontaktet (rød) |
+| Har kontaktet | Avkrysning når bedriften er kontaktet på annen måte (telefon, LinkedIn, styret). Systemet fyller den aldri. |
+| E-post (fra Gmail) | Kontakten fra siste relevante e-post |
+| Annen kontakt | E-post/telefon du har funnet selv. Oransje = hentet fra nettet, sjekk før bruk. Skriver du over, blir den din. |
+| Svar fra bedrift, Kontaktet høst 2026, Kontaktet tidligere, Siste relevante e-post | Fra Gmail |
+
+Kategorirader er uthevet, og alle kolonnene har filterknapper. **Søk:** Ctrl/Cmd + F, eller klikk filterknappen i
+«Bedrift» og skriv i søkefeltet. **Bare dem som ikke er kontaktet:** filtrer Kontaktstatus på «Ikke kontaktet».
+
+**WFD → Oppdater Bedriftsliste fra Gmail** (og hver natt kl. 03) søker etter hver bedrift i e-post til/fra
+WFD-adressen. En tråd teller bare når motpartens domene ligner navnet, når e-posten inviterer bedriften ved navn, eller
+når navnet står i emnet. Står navnet annerledes i arket enn i e-posten («Clarksson», «EQT group», «Hitec vision»),
+finnes bedriften via domenene WFD har skrevet med. For navn som ikke ligner domenet i det hele tatt («SpareBank1
+Markets» → sb1markets.no) står domenet i `Nettkontakter.gs`. «Har kontaktet» og «Annen kontakt» røres aldri.
 
 ## Ikke kontaktet
 
-Fanen **Ikke kontaktet** viser alle bedrifter i Bedriftsliste som ikke har fått e-post fra WFD-adressen i høst, med
-kategori, e-post (grønn) eller «mangler kontaktperson» (gul), når de ble kontaktet tidligere og siste relevante e-post.
-De med e-post står øverst. Bedriftsliste oppdateres fra Gmail hver natt kl. 03, og har filterknapper i
-overskriftsraden for egen filtrering og sortering.
+Fanen **Ikke kontaktet** viser bedriftene i Bedriftsliste som ikke har fått e-post fra WFD-adressen i høst, med
+kategori, beste kontakt og hvor den kommer fra: **Gmail** (grønn), **Fra nett – sjekk** (oransje), **Lagt inn selv**
+(blå) eller «mangler kontaktperson» (gul). **Kryss av i ✓** når en bedrift er kontaktet på annen måte – da krysses
+«Har kontaktet» av i Bedriftsliste, og den forsvinner fra listen.
+
+## Avkrysning på Oversikt
+
+* **Trenger svar fra deg ✓** – du har svart, eller bedriften trenger ikke svar: «Trenger svar» blir Nei i Booking.
+* **Bør purres ✓** – du har purret: status blir «Purret» og «Sist kontakt» i dag, så den kommer tilbake om 7 dager
+  hvis bedriften ikke svarer.
+
+Alt som krysses av, logges i Logg («Manuelt»). Det skjer med en enkel `onEdit`-trigger i `Avkryssing.gs`, som virker
+uten oppsett.
+
+## Gjøremål
+
+Fanen **Gjøremål** er en enkel oppgaveliste: ✓, oppgave, bedrift, frist, ansvarlig og notat. Avkryssede oppgaver blir
+grå og gjennomstreket, og frister som har gått ut blir røde. Systemet lager fanen én gang med de åpne oppgavene og
+tømmer den aldri.
 
 ## Invitere alle som ikke er kontaktet
 
@@ -130,6 +158,8 @@ invitasjons-PDF-en fra en tidligere sendt invitasjon) til hver bedrift i Bedrift
 * har en e-postadresse i «E-post (fra Gmail)»,
 * ikke allerede er invitert eller i dialog i Booking, og
 * ikke allerede har et utkast.
+
+Kontakter hentet fra nettet (oransje) tas ikke med før du har sjekket dem og skrevet dem inn selv.
 
 Norsk tekst til .no-adresser, engelsk ellers. Tekstene ligger i `KONFIG.INVITASJON_NO` / `INVITASJON_EN`. Ingenting
 sendes automatisk. Til slutt får du en liste over bedrifter som heller ikke er kontaktet, men som mangler e-post.

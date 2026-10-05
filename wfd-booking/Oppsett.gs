@@ -29,7 +29,8 @@ function settOpp() {
   const tidligere = egenskaper.getProperty('BEDRIFTSARK');
   if (!(tidligere && ss.getSheetByName(tidligere))) {
     const aktiv = ss.getActiveSheet().getName();
-    const interne = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT, KONFIG.ARK_IKKE_KONTAKTET, KONFIG.ARK_TRADER];
+    const interne = [KONFIG.ARK_LOGG, KONFIG.ARK_OVERSIKT, KONFIG.ARK_FJOR, KONFIG.ARK_BEDRIFTSOVERSIKT, KONFIG.ARK_IKKE_KONTAKTET,
+      KONFIG.ARK_GJOREMAL, KONFIG.ARK_TRADER];
     if (interne.indexOf(aktiv) >= 0) {
       ui.alert('Åpne fanen med booking-tabellen først, og velg menyvalget på nytt.');
       return;

@@ -220,13 +220,16 @@ function behandleTrad_(trad, tabell, trader, tilstand) {
   // ---- Finn eller lag rad ----
   if (rad < 0 && analyse && analyse.bedrift) rad = finnRad_(tabell, motpart, analyse.bedrift);
   const ny = rad < 0;
-  if (ny && tilstand.historikk && KONFIG.HISTORIKK_BARE_KJENTE) {
+  // Historikken lager aldri nye rader for private adresser (gmail.com o.l.) – det er som regel ikke bedrifter.
+  if (ny && tilstand.historikk && (KONFIG.HISTORIKK_BARE_KJENTE || motpart.privat)) {
     lagreTrad_(trader, tradId, motpart.nokkel, siste.getDate(), alle.length);
     return false;
   }
   if (ny) {
     rad = nyRad_(tabell);
-    settCelle_(tabell, rad, 'bedrift', (analyse && analyse.bedrift) || (motpart.privat ? motpart.navn || motpart.epost : navnFraDomene_(motpart.domene)));
+    // Navnet fra Bedriftsliste hvis bedriften står der (nysnoinvest.no → «Nysnø climate investments»), ellers fra domenet.
+    settCelle_(tabell, rad, 'bedrift', (analyse && analyse.bedrift) || (motpart.privat ? motpart.navn || motpart.epost
+      : navnFraBedriftsliste_(motpart.domene) || navnFraDomene_(motpart.domene)));
     settCelle_(tabell, rad, 'forsteKontakt', alle[0].getDate());
   }
   if (!motpart.privat && !celle_(tabell, rad, 'domene')) settCelle_(tabell, rad, 'domene', motpart.domene);

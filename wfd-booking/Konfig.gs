@@ -133,7 +133,9 @@ Women’s Finance Day
   // Hvilke e-poster historikken leser: alt som er sendt fra eller til WFD-adressen.
   HISTORIKK_SOK: '{from:wfd.booking@nhhs.no to:wfd.booking@nhhs.no cc:wfd.booking@nhhs.no}',
   // true: historikken oppdaterer bare bedrifter som allerede står i Booking (lager ingen nye rader).
-  HISTORIKK_BARE_KJENTE: true,
+  // false: alle bedrifter WFD har skrevet med om Women's Finance Day siden HISTORIKK_FRA_DATO kommer med, så Booking
+  // blir en fullstendig oversikt. Private adresser (gmail.com o.l.) blir aldri nye rader fra historikken.
+  HISTORIKK_BARE_KJENTE: false,
   // true: AI leser hver gamle tråd og fyller inn status og oppsummering (krever API-nøkkel).
   HISTORIKK_MED_AI: false,
 
@@ -218,6 +220,7 @@ Women’s Finance Day
   ARK_FJOR: 'Mot fjoråret',
   ARK_BEDRIFTSOVERSIKT: 'Bedriftsoversikt',
   ARK_IKKE_KONTAKTET: 'Ikke kontaktet',
+  ARK_GJOREMAL: 'Gjøremål',
 
   // Pakkene i år. Fjorårets pakke leses fra «(Premium)» / «(Partner)» i bedriftsnavnet.
   PAKKER: { premium: 'Premium partner', partner: 'Partner' },
