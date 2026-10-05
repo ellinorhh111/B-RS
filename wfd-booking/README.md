@@ -112,14 +112,19 @@ Bedriftsliste er oversikten over alle finansbedrifter dere synes er relevante. R
 | Kolonne | Hva |
 |---|---|
 | Kategori | Fra nærmeste fete rad over (Private Equity, Venture …). Kan endres. |
-| Kontaktstatus | Kontaktet i høst (grønn) · Kontaktet (manuelt) · Kontaktet tidligere (gul) · Ikke kontaktet (rød) |
+| Kontaktstatus | Bekreftet · I dialog · Kontaktet – venter på svar · Takket nei · Ikke kontaktet · Ikke aktuell. Status hentes fra Booking. |
 | Har kontaktet | Avkrysning når bedriften er kontaktet på annen måte (telefon, LinkedIn, styret). Systemet fyller den aldri. |
+| Ikke aktuell | Avkrysning når bedriften ikke skal kontaktes i år. Systemet fyller den aldri. |
+| Navn i Booking | Raden i Booking bedriften hører til, så status kan hentes derfra. Fylles automatisk (usikre koblinger til godkjenning). |
 | E-post (fra Gmail) | Kontakten fra siste relevante e-post |
 | Annen kontakt | E-post/telefon du har funnet selv. Oransje = hentet fra nettet, sjekk før bruk. Skriver du over, blir den din. |
 | Svar fra bedrift, Kontaktet høst 2026, Kontaktet tidligere, Siste relevante e-post | Fra Gmail |
 
 Kategorirader er uthevet, og alle kolonnene har filterknapper. **Søk:** Ctrl/Cmd + F, eller klikk filterknappen i
 «Bedrift» og skriv i søkefeltet. **Bare dem som ikke er kontaktet:** filtrer Kontaktstatus på «Ikke kontaktet».
+
+**Oversikt** viser fordelingen av alle bedriftene i Bedriftsliste på disse statusene, totalen, og hvor mange som står i
+Booking uten å stå i Bedriftsliste (så ingen faller utenfor).
 
 **WFD → Oppdater Bedriftsliste fra Gmail** (og hver natt kl. 03) søker etter hver bedrift i e-post til/fra
 WFD-adressen. En tråd teller bare når motpartens domene ligner navnet, når e-posten inviterer bedriften ved navn, eller

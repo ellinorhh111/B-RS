@@ -2218,17 +2218,24 @@ function lagOversikt_(ss, tabell) {
       .setRanges([varsel]).build(),
     SpreadsheetApp.newConditionalFormatRule().whenTextStartsWith('✓').setFontColor('#166534').setRanges([varsel]).build(),
   ]));
-  ark.getRange('B8').setValue('Status').setFontSize(13).setFontWeight('bold');
+  // Fordeling av alle bedriftene i Bedriftsliste (status hentes fra Booking via «Navn i Booking»).
+  const liste = bedriftslisteArk_(ss);
+  const blStatusKol = liste ? kolonneMedNavn_(liste, BL_KOLONNER.kontaktstatus) : 0;
+  const blNavnKol = liste ? kolonneMedNavn_(liste, BL_KOLONNER.bookingNavn) : 0;
+  const L = liste ? "'" + liste.getName() + "'!" : '';
+  const blOmr = k => L + kolonneBokstav_(k) + '2:' + kolonneBokstav_(k);
+  ark.getRange('B8').setValue(blStatusKol ? 'Bedriftsliste – status' : 'Status').setFontSize(13).setFontWeight('bold');
   const forste = 9;
-  const sist = forste + statuser.length - 1;
-  statuser.forEach((st, i) => {
+  const rekker = blStatusKol ? BL_STATUSER : statuser.map(st => [st].concat(STATUSFARGE[st] || ['#F3F4F6', '#374151']));
+  const sist = forste + rekker.length - 1;
+  rekker.forEach(([st, bg, fg], i) => {
     const r = forste + i;
-    const [bg, fg] = STATUSFARGE[st] || ['#F3F4F6', '#374151'];
     const etikett = ark.getRange(r, 2, 1, 2);
     etikett.merge();
     etikett.getCell(1, 1).setValue(st);
     etikett.setBackground(bg).setFontColor(fg).setFontWeight('bold');
-    ark.getRange(r, 4).setFormula(`=COUNTIF(${omr('status')},"${st}")`).setHorizontalAlignment('center').setFontWeight('bold');
+    ark.getRange(r, 4).setFormula(blStatusKol ? `=COUNTIF(${blOmr(blStatusKol)},"${st}")` : `=COUNTIF(${omr('status')},"${st}")`)
+      .setHorizontalAlignment('center').setFontWeight('bold');
     const strek = ark.getRange(r, 5, 1, 4);
     strek.merge();
     strek.getCell(1, 1).setFormula(
@@ -2237,14 +2244,30 @@ function lagOversikt_(ss, tabell) {
   });
   const total = ark.getRange(sist + 1, 2, 1, 2);
   total.merge();
-  total.getCell(1, 1).setValue('Rader i Booking (alle statuser)');
-  total.setFontColor(FARGE.dempet);
-  ark.getRange(sist + 1, 4).setFormula(`=COUNTA(${omr('bedrift')})`).setFontColor(FARGE.dempet).setHorizontalAlignment('center');
+  total.setFontWeight('bold').setBorder(true, null, null, null, null, null, FARGE.tekst, SpreadsheetApp.BorderStyle.SOLID);
+  ark.getRange(sist + 1, 4).setFontWeight('bold').setHorizontalAlignment('center')
+    .setBorder(true, null, null, null, null, null, FARGE.tekst, SpreadsheetApp.BorderStyle.SOLID);
+  if (blStatusKol) {
+    total.getCell(1, 1).setValue('Bedrifter i Bedriftsliste');
+    ark.getRange(sist + 1, 4).setFormula(`=COUNTIF(${blOmr(blStatusKol)},"?*")`);
+    // Det som står i Booking, men ikke i Bedriftsliste – så ingenting faller utenfor.
+    const utenfor = ark.getRange(sist + 2, 2, 1, 2);
+    utenfor.merge();
+    utenfor.getCell(1, 1).setValue('+ i Booking, ikke i Bedriftsliste');
+    utenfor.setFontColor(FARGE.dempet);
+    ark.getRange(sist + 2, 4).setFormula(blNavnKol
+      ? `=SUMPRODUCT((${omr('bedrift')}<>"")*(COUNTIF(${blOmr(blNavnKol)},${omr('bedrift')})=0))` : '=""')
+      .setFontColor(FARGE.dempet).setHorizontalAlignment('center');
+    ark.getRange(sist + 2, 5).setValue('legg dem til i Bedriftsliste, eller sjekk «Navn i Booking»').setFontColor(FARGE.dempet)
+      .setFontSize(9);
+  } else {
+    total.getCell(1, 1).setValue('Rader i Booking (alle statuser)');
+    ark.getRange(sist + 1, 4).setFormula(`=COUNTA(${omr('bedrift')})`);
+  }
 
   // To avkrysningslister side om side: B–G og H–M.
-  const tittel = sist + 4;
-  const hode = tittel + 1;
-  if (hode !== oversiktListeHode_()) throw new Error('Oversikt: listehodet har flyttet seg – oppdater oversiktListeHode_().');
+  const hode = oversiktListeHode_(); // fast rad, så avkrysningen (onEdit) alltid finner listene
+  const tittel = hode - 1;
   ark.getRange(tittel, 2).setValue('Trenger svar fra deg').setFontSize(13).setFontWeight('bold');
   ark.getRange(tittel, 8).setValue('Bør purres  ·  ' + purrDager + '+ dager uten svar').setFontSize(13).setFontWeight('bold');
   [[2, 'Siste hendelse', 'Kryss av når du har svart, eller når bedriften ikke trenger svar. Da settes «Trenger svar» ' +
@@ -2285,9 +2308,10 @@ function lagOversikt_(ss, tabell) {
 /** Overskriftsraden til avkrysningslistene på Oversikt (brukes også av onEdit). */
 const OVERSIKT_HAKE = '✓';
 const OVERSIKT_RADER = 40;
+// Plass til statusfordelingen (det største av Booking-statusene og Bedriftsliste-statusene).
+const OVERSIKT_STATUSRADER = Math.max(KONFIG.STATUSER.length + 1, 6);
 function oversiktListeHode_() {
-  const antallStatuser = KONFIG.STATUSER.length + 1; // + «Takket nei»
-  return 9 + antallStatuser - 1 + 5;
+  return 9 + OVERSIKT_STATUSRADER - 1 + 5;
 }
 
 // ---------------------------------------------------------------------------
@@ -2475,7 +2499,8 @@ function lagBedriftsoversikt_(ss, tabell) {
 // «Ikke kontaktet»: bedrifter i Bedriftsliste uten kontakt i høst
 // ---------------------------------------------------------------------------
 
-const IK_HODE = 6; // overskriftsraden i «Ikke kontaktet» (brukes også av onEdit)
+const IK_HODE = 6;     // overskriftsraden i «Ikke kontaktet» (brukes også av onEdit)
+const IK_BEDRIFT = 5;  // kolonnen med bedriftsnavnet: B = ✓ kontaktet, C = ✗ ikke aktuell, D = kategori, E = bedrift
 
 function lagIkkeKontaktetFane_(ss) {
   const liste = bedriftslisteArk_(ss);
@@ -2490,11 +2515,11 @@ function lagIkkeKontaktetFane_(ss) {
   const kategori = omr(kol.kategori), host = omr(kol.host), gmail = omr(kol.epost), annen = omr(kol.annen),
     kilde = omr(kol.kilde), manuelt = omr(kol.manuelt), tidligere = omr(kol.tidligere), trad = omr(kol.trad);
   // Bedriftsrader har kategori (kategorirader og tomme rader har ikke). Avkrysset «Har kontaktet» teller som kontaktet.
-  const ikke = `(${bedrift}<>"")*(${kategori}<>"")*(${host}="")*(${manuelt}<>TRUE)`;
+  const ikke = `(${omr(kol.kontaktstatus)}="Ikke kontaktet")`;
 
   const ark = forberedRapport_(ss, KONFIG.ARK_IKKE_KONTAKTET, 'Ikke kontaktet i høst',
-    'Bedrifter i «' + liste.getName() + '» uten e-post fra WFD-adressen i høst. Kryss av i ✓ når en bedrift er kontaktet ' +
-    'på annen måte (telefon, LinkedIn, styret) – da forsvinner den herfra. Oransje = kontakt hentet fra nettet, sjekk før bruk.');
+    'Bedrifter i «' + liste.getName() + '» som ikke er kontaktet i høst. Kryss av i ✓ når en bedrift er kontaktet på annen måte ' +
+    '(telefon, LinkedIn, styret), eller i ✗ hvis den ikke er aktuell i år – da forsvinner den herfra. Oransje = kontakt fra nettet.');
 
   ark.getRange('B4').setFormula(
     `=ARRAYFORMULA(SUM(${ikke}) & " ikke kontaktet   ·   " & SUM(${ikke}*(${gmail}<>"")) & " e-post fra Gmail   ·   " & ` +
@@ -2504,20 +2529,22 @@ function lagIkkeKontaktetFane_(ss) {
     .setFontSize(12).setFontWeight('bold').setFontColor(FARGE.indigo);
   ark.setRowHeight(4, 28);
 
-  const kolonner = [[OVERSIKT_HAKE, 44], ['Kategori', 140], ['Bedrift', 210], ['E-post / kontakt', 270], ['Kilde', 130],
+  const kolonner = [[OVERSIKT_HAKE, 44], ['✗', 44], ['Kategori', 140], ['Bedrift', 210], ['E-post / kontakt', 270], ['Kilde', 130],
     ['Kontaktet tidligere', 130], ['Siste relevante e-post', 340]];
   const hode = IK_HODE;
   ark.getRange(hode, 2, 1, kolonner.length).setValues([kolonner.map(k => k[0])]);
   stilTabellhode_(ark.getRange(hode, 2, 1, kolonner.length));
   ark.getRange(hode, 2).setHorizontalAlignment('center')
     .setNote('Kryss av når bedriften er kontaktet på annen måte. Da krysses «Har kontaktet» av i Bedriftsliste.');
+  ark.getRange(hode, 3).setHorizontalAlignment('center')
+    .setNote('Kryss av hvis bedriften ikke er aktuell i år. Da krysses «Ikke aktuell» av i Bedriftsliste.');
   ark.setRowHeight(hode, 30);
   kolonner.forEach(([, b], i) => ark.setColumnWidth(2 + i, b));
   ark.setFrozenRows(hode);
 
   const visKontakt = `IF(${gmail}<>"",${gmail},IF(${annen}<>"",${annen},"– mangler kontaktperson –"))`;
   const visKilde = `IF(${gmail}<>"","Gmail",IF(${annen}="","",IF(${kilde}<>"","Fra nett – sjekk","Lagt inn selv")))`;
-  ark.getRange(hode + 1, 3).setFormula(
+  ark.getRange(hode + 1, IK_BEDRIFT - 1).setFormula(
     `=ARRAYFORMULA(IFERROR(SORT(` +
     `FILTER({${kategori},${bedrift},${visKontakt},${visKilde},${tidligere},${trad}},${ikke}),` +
     `FILTER((${gmail}="")*(${annen}=""),${ikke}),TRUE,FILTER(${gmail}="",${ikke}),TRUE,` +
@@ -2525,29 +2552,31 @@ function lagIkkeKontaktetFane_(ss) {
     `"Alle er kontaktet 🎉"))`);
 
   const rader = 300;
-  ark.getRange(hode + 1, 2, rader, 1).insertCheckboxes().setHorizontalAlignment('center');
-  ark.getRange(hode + 1, 3, rader, 1).setFontColor(FARGE.dempet);
-  ark.getRange(hode + 1, 4, rader, 1).setFontWeight('bold');
-  ark.getRange(hode + 1, 5, rader, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
-  ark.getRange(hode + 1, 6, rader, 1).setFontColor(FARGE.dempet);
-  ark.getRange(hode + 1, 7, rader, 1).setNumberFormat('d. mmm yyyy').setHorizontalAlignment('center');
-  ark.getRange(hode + 1, 8, rader, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontColor(FARGE.dempet);
-  ark.getRange(hode + 1, 2, rader, kolonner.length)
+  const r0 = hode + 1;
+  const K = IK_BEDRIFT; // bedrift-kolonnen (E); kategori er til venstre, kontakt og kilde til høyre
+  ark.getRange(r0, 2, rader, 2).insertCheckboxes().setHorizontalAlignment('center');
+  ark.getRange(r0, K - 1, rader, 1).setFontColor(FARGE.dempet);
+  ark.getRange(r0, K, rader, 1).setFontWeight('bold');
+  ark.getRange(r0, K + 1, rader, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP);
+  ark.getRange(r0, K + 2, rader, 1).setFontColor(FARGE.dempet);
+  ark.getRange(r0, K + 3, rader, 1).setNumberFormat('d. mmm yyyy').setHorizontalAlignment('center');
+  ark.getRange(r0, K + 4, rader, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setFontColor(FARGE.dempet);
+  ark.getRange(r0, 2, rader, kolonner.length)
     .setBorder(null, null, null, null, null, true, FARGE.linje, SpreadsheetApp.BorderStyle.SOLID);
 
-  const r0 = hode + 1;
   const regel = () => SpreadsheetApp.newConditionalFormatRule();
-  const kontaktOmr = ark.getRange(r0, 5, rader, 1);
-  const kontaktOgKilde = ark.getRange(r0, 5, rader, 2);
+  const B_ = kolonneBokstav_(K), Ki = kolonneBokstav_(K + 2);
+  const kontaktOmr = ark.getRange(r0, K + 1, rader, 1);
+  const kontaktOgKilde = ark.getRange(r0, K + 1, rader, 2);
   ark.setConditionalFormatRules([
-    regel().whenFormulaSatisfied(`=$D${r0}=""`).setFontColor(FARGE.hvit).setRanges([ark.getRange(r0, 2, rader, 1)]).build(),
+    regel().whenFormulaSatisfied(`=$${B_}${r0}=""`).setFontColor(FARGE.hvit).setRanges([ark.getRange(r0, 2, rader, 2)]).build(),
     regel().whenTextEqualTo('– mangler kontaktperson –')
       .setBackground('#FEF3C7').setFontColor('#92400E').setItalic(true).setRanges([kontaktOmr]).build(),
-    regel().whenFormulaSatisfied(`=$F${r0}="Fra nett – sjekk"`)
+    regel().whenFormulaSatisfied(`=$${Ki}${r0}="Fra nett – sjekk"`)
       .setBackground('#FFEDD5').setFontColor('#9A3412').setRanges([kontaktOgKilde]).build(),
-    regel().whenFormulaSatisfied(`=$F${r0}="Gmail"`)
+    regel().whenFormulaSatisfied(`=$${Ki}${r0}="Gmail"`)
       .setBackground('#DCFCE7').setFontColor('#166534').setRanges([kontaktOmr]).build(),
-    regel().whenFormulaSatisfied(`=$F${r0}="Lagt inn selv"`)
+    regel().whenFormulaSatisfied(`=$${Ki}${r0}="Lagt inn selv"`)
       .setBackground('#E0F2FE').setFontColor('#075985').setRanges([kontaktOmr]).build(),
   ]);
 }
@@ -2669,8 +2698,10 @@ function fjernEkstraFarger() {
 
 const BL_KOLONNER = {
   kategori: 'Kategori',             // fra nærmeste fete rad over (f.eks. «Private Equity»)
-  kontaktstatus: 'Kontaktstatus',   // formel: Kontaktet i høst / Kontaktet (manuelt) / Kontaktet tidligere / Ikke kontaktet
+  kontaktstatus: 'Kontaktstatus',   // formel: se BL_STATUSER (henter status fra Booking via «Navn i Booking»)
   manuelt: 'Har kontaktet',         // avkrysning: kontaktet på annen måte (telefon, LinkedIn, styret) – fylles aldri av systemet
+  ikkeAktuell: 'Ikke aktuell',      // avkrysning: skal ikke kontaktes i år – fylles aldri av systemet
+  bookingNavn: 'Navn i Booking',    // raden i Booking bedriften hører til (fylles automatisk; usikre koblinger til godkjenning)
   epost: 'E-post (fra Gmail)',
   annen: 'Annen kontakt',           // e-post/telefon du har funnet selv, eller hentet fra nettet (oransje)
   svar: 'Svar fra bedrift',
@@ -2682,7 +2713,17 @@ const BL_KOLONNER = {
 // Kolonnene «Oppdater Bedriftsliste fra Gmail» tømmer og fyller på nytt. De andre røres aldri av den.
 const BL_AUTO = ['host', 'svar', 'tidligere', 'epost', 'trad'];
 // Rekkefølgen rett etter bedriftsnavnet når «Gjør arbeidsboken ryddig og pen» kjøres.
-const BL_REKKEFOLGE = ['kategori', 'kontaktstatus', 'manuelt', 'epost', 'annen', 'svar', 'host', 'tidligere', 'trad'];
+const BL_REKKEFOLGE = ['kategori', 'kontaktstatus', 'manuelt', 'ikkeAktuell', 'epost', 'annen', 'bookingNavn', 'svar', 'host',
+  'tidligere', 'trad'];
+// Kontaktstatus i Bedriftsliste (og fordelingen på Oversikt). [navn, bakgrunn, tekst]
+const BL_STATUSER = [
+  ['Bekreftet', '#DCFCE7', '#166534'],
+  ['I dialog', '#EDE9FE', '#5B21B6'],
+  ['Kontaktet – venter på svar', '#E0E7FF', '#3730A3'],
+  ['Takket nei', '#F3F4F6', '#6B7280'],
+  ['Ikke kontaktet', '#FEE2E2', '#B91C1C'],
+  ['Ikke aktuell', '#F9FAFB', '#9CA3AF'],
+];
 
 function bedriftslisteArk_(ss) {
   const navn = ((KONFIG.ANDRE_FANER || [])[0] || {}).til || 'Bedriftsliste';
@@ -2844,7 +2885,7 @@ function stilBedriftsliste_(ark, kol) {
   const maks = Math.max(ark.getMaxRows() - 1, 1);
   const sisteKol = Math.max(ark.getLastColumn(), 1);
 
-  const bredder = { kategori: 140, kontaktstatus: 150, manuelt: 105, epost: 230, annen: 230, svar: 110, host: 130,
+  const bredder = { kategori: 140, kontaktstatus: 190, manuelt: 105, ikkeAktuell: 95, bookingNavn: 170, epost: 230, annen: 230, svar: 110, host: 130,
     tidligere: 130, trad: 340, kilde: 120 };
   Object.keys(kol).forEach(k => {
     ark.getRange(1, kol[k] + 1).setBackground(FARGE.indigo).setFontColor(FARGE.hvit).setFontWeight('bold');
@@ -2853,23 +2894,37 @@ function stilBedriftsliste_(ark, kol) {
   ark.getRange(1, 1).setNote('Søk: Ctrl/Cmd + F, eller klikk filterknappen i en overskrift og skriv i søkefeltet.\n' +
     'Kontaktstatus viser om bedriften er kontaktet. Kryss av i «Har kontaktet» hvis den er kontaktet på annen måte.');
   [kol.host, kol.tidligere].forEach(k => ark.getRange(2, k + 1, maks, 1).setNumberFormat('d. mmm yyyy').setHorizontalAlignment('center'));
-  [kol.svar, kol.manuelt].forEach(k => ark.getRange(2, k + 1, maks, 1).setHorizontalAlignment('center'));
+  [kol.svar, kol.manuelt, kol.ikkeAktuell].forEach(k => ark.getRange(2, k + 1, maks, 1).setHorizontalAlignment('center'));
+  ark.getRange(2, kol.bookingNavn + 1, maks, 1).setFontColor(FARGE.dempet);
+  ark.getRange(1, kol.bookingNavn + 1).setNote('Raden i Booking bedriften hører til. Status hentes derfra (Bekreftet, I dialog, ' +
+    'Takket nei …). Fylles automatisk; usikre koblinger går til «' + KONFIG.ARK_GODKJENNING + '». Du kan skrive inn selv.');
   [kol.trad, kol.epost, kol.annen].forEach(k =>
     ark.getRange(2, k + 1, maks, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setHorizontalAlignment('left'));
   ark.getRange(2, kol.kategori + 1, maks, 1).setFontColor(FARGE.dempet);
 
-  // Kontaktstatus regnes ut av formelen i overskriften, så den alltid stemmer med avkrysningen.
+  // Kontaktstatus regnes ut av formelen i overskriften: «Ikke aktuell» → status fra Booking → kontaktet i høst → ikke kontaktet.
+  let fraBooking = '""';
+  try {
+    const t = lesBedrifter_();
+    const Bk = "'" + t.ark.getName() + "'!";
+    const bk = n => Bk + kolonneBokstav_(t.kol[n] + 1) + '2:' + kolonneBokstav_(t.kol[n] + 1);
+    fraBooking = `IF(${omr('bookingNavn')}="","",IFERROR(VLOOKUP(${omr('bookingNavn')},{${bk('bedrift')},${bk('status')}},2,FALSE),""))`;
+  } catch (e) { /* ingen booking-fane ennå */ }
   ark.getRange(1, kol.kontaktstatus + 1).setFormula(
     `={"${BL_KOLONNER.kontaktstatus}";ARRAYFORMULA(IF((A2:A="")+(${omr('kategori')}=""),"",` +
-    `IF(${omr('manuelt')}=TRUE,"Kontaktet (manuelt)",IF(${omr('host')}<>"","Kontaktet i høst",` +
-    `IF(${omr('tidligere')}<>"","Kontaktet tidligere","Ikke kontaktet")))))}`);
+    `IF(${omr('ikkeAktuell')}=TRUE,"Ikke aktuell",LET(bs,${fraBooking},` +
+    `IF(bs="Bekreftet","Bekreftet",IF(bs="${KONFIG.STATUS_NEI}","Takket nei",` +
+    `IF(REGEXMATCH(bs,"^(I dialog|Interessert|Tilbud sendt)$"),"I dialog",` +
+    `IF((bs="Kontaktet")+(bs="Purret")+(${omr('host')}<>"")+(${omr('manuelt')}=TRUE),"Kontaktet – venter på svar",` +
+    `"Ikke kontaktet"))))))))}`);
 
   const info = skrivKategorier_(ark, kol);
   if (info) {
     // Avkrysning bare på bedriftsrader (ikke på kategorirader og tomme rader).
     const boks = SpreadsheetApp.newDataValidation().requireCheckbox().build();
-    ark.getRange(2, kol.manuelt + 1, info.navn.length, 1)
-      .setDataValidations(info.navn.map((n, i) => [n && !info.fet[i] ? boks : null]));
+    [kol.manuelt, kol.ikkeAktuell].forEach(k => ark.getRange(2, k + 1, info.navn.length, 1)
+      .setDataValidations(info.navn.map((n, i) => [n && !info.fet[i] ? boks : null])));
+    koblTilBooking_(ark, kol, info);
   }
 
   ark.hideColumns(kol.kilde + 1);
@@ -2906,15 +2961,58 @@ function stilBedriftsliste_(ark, kol) {
       .setRanges([ark.getRange(2, 1, maks, sisteKol)]).build(),
     regel().whenFormulaSatisfied(ventendeFormel_('A2')).setBackground('#FDBA74').setFontColor('#7C2D12').setBold(true)
       .setRanges([status]).build(),
-    regel().whenTextEqualTo('Kontaktet i høst').setBackground('#DCFCE7').setFontColor('#166534').setRanges([status]).build(),
-    regel().whenTextEqualTo('Kontaktet (manuelt)').setBackground('#DCFCE7').setFontColor('#166534').setItalic(true).setRanges([status]).build(),
-    regel().whenTextEqualTo('Kontaktet tidligere').setBackground('#FEF3C7').setFontColor('#92400E').setRanges([status]).build(),
-    regel().whenTextEqualTo('Ikke kontaktet').setBackground('#FEE2E2').setFontColor('#B91C1C').setRanges([status]).build(),
+    ...BL_STATUSER.map(([navn, bg, fg]) => regel().whenTextEqualTo(navn).setBackground(bg).setFontColor(fg)
+      .setItalic(navn === 'Ikke aktuell').setRanges([status]).build()),
     regel().whenFormulaSatisfied(`=$${bokstav('kilde')}2<>""`).setBackground('#FFEDD5').setFontColor('#9A3412')
       .setRanges([kolOmr('annen')]).build(),
     regel().whenTextEqualTo('Ja').setBackground('#DCFCE7').setFontColor('#166534').setRanges([kolOmr('svar')]).build(),
     regel().whenTextEqualTo('Nei').setBackground('#FEF3C7').setFontColor('#92400E').setRanges([kolOmr('svar')]).build(),
   ]));
+}
+
+/**
+ * Fyller «Navn i Booking»: hvilken rad i Booking bedriften hører til. Sikre koblinger (samme navn, eller samme
+ * e-postdomene som står i begge fanene) skrives rett inn. Koblinger der domenet bare ligner navnet går til godkjenning.
+ * Fylles bare der cellen er tom, så det du skriver selv blir stående.
+ */
+function koblTilBooking_(ark, kol, info) {
+  let tabell;
+  try { tabell = lesBedrifter_(); } catch (e) { return; }
+  const booking = tabell.rader.map((r, i) => {
+    const navn = String(celle_(tabell, i, 'bedrift')).trim();
+    const domener = [String(celle_(tabell, i, 'domene')).toLowerCase().trim()]
+      .concat((String(celle_(tabell, i, 'epost')).match(/[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || []).map(domeneAv_))
+      .filter(Boolean);
+    return { navn, nokkel: utenAksent_(normaliserNavn_(sokeNavn_(navn))), domener };
+  }).filter(b => b.navn);
+  const antall = info.navn.length;
+  const naa = ark.getRange(2, kol.bookingNavn + 1, antall, 1).getValues();
+  const eposter = ark.getRange(2, 1, antall, ark.getLastColumn()).getValues();
+  const ut = naa.map(r => [r[0]]);
+  const finnes = {};
+  booking.forEach(b => { finnes[b.navn] = true; });
+  let endret = false;
+  info.navn.forEach((n, i) => {
+    const naaNavn = String(naa[i][0]).trim();
+    if (!n || info.fet[i] || (naaNavn && finnes[naaNavn])) return;
+    if (naaNavn) { ut[i] = ['']; endret = true; } // raden i Booking har fått nytt navn eller er slettet: koble på nytt
+    const nokkel = utenAksent_(normaliserNavn_(sokeNavn_(n)));
+    let treff = booking.find(b => b.nokkel && b.nokkel === nokkel);
+    if (!treff) {
+      const d = [eposter[i][kol.epost], eposter[i][kol.annen]].join(' ')
+        .match(/[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
+      const dom = d.map(domeneAv_).filter(Boolean);
+      treff = booking.find(b => b.domener.some(x => dom.indexOf(x) >= 0));
+    }
+    if (treff) { ut[i] = [treff.navn]; endret = true; return; }
+    const lik = booking.find(b => b.domener.some(x => domeneLignerNavn_(x, n)) || domeneLignerNavn_(b.navn.replace(/\s+/g, '') + '.x', n));
+    if (lik) {
+      foreslaa_(sokeNavn_(n), 'Bedriftsliste: hører til denne raden i Booking?', '', lik.navn,
+        'Navnene ligner (' + n + ' / ' + lik.navn + '). Godkjenn, så hentes status fra Booking.', '',
+        { type: 'blBooking', nokkel: 'blBooking|' + nokkel + '|' + lik.nokkel });
+    }
+  });
+  if (endret) ark.getRange(2, kol.bookingNavn + 1, antall, 1).setValues(ut);
 }
 
 /** Flytter systemkolonnene rett etter bedriftsnavnet, i rekkefølgen BL_REKKEFOLGE. Dine egne kolonner kommer etter. */
@@ -3163,7 +3261,7 @@ function invitasjonsKandidater_(ark) {
     const annen = (String(r[kol.annen]).match(/[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/) || [''])[0];
     const epost = (String(r[kol.epost]).trim() || annen).toLowerCase();
     const fraNett = !String(r[kol.epost]).trim() && !!String(r[kol.kilde]).trim();
-    if (!bedrift || fet[i] || !epost || r[kol.host] || r[kol.manuelt] === true) return;
+    if (!bedrift || fet[i] || !epost || r[kol.host] || r[kol.manuelt] === true || r[kol.ikkeAktuell] === true) return;
     if (iBooking[normaliserNavn_(sokeNavn_(bedrift))]) return;
     if (utkastTil[epost]) return;
     utkastTil[epost] = true; // samme adresse kan stå på flere rader (f.eks. under to kategorier)
@@ -3267,7 +3365,7 @@ function utenKontaktperson_(ark) {
   const verdier = ark.getRange(2, 1, antall, ark.getLastColumn()).getValues();
   const fet = ark.getRange(2, 1, antall, 1).getFontWeights().map(r => r[0] === 'bold');
   return verdier.filter((r, i) => String(r[0]).trim() && !fet[i] && !r[kol.epost] && !/@/.test(String(r[kol.annen])) &&
-    !r[kol.host] && r[kol.manuelt] !== true).map(r => String(r[0]).trim());
+    !r[kol.host] && r[kol.manuelt] !== true && r[kol.ikkeAktuell] !== true).map(r => String(r[0]).trim());
 }
 
 /** Kjøres automatisk hver natt, så «Ikke kontaktet» alltid er oppdatert. */
@@ -3378,7 +3476,7 @@ function fyllNettkontakter_(ark, kol) {
  *
  *  Oversikt → «Trenger svar fra deg» ✓   «Trenger svar» settes til Nei i Booking (du har svart / trenger ikke svar).
  *  Oversikt → «Bør purres» ✓              Status blir «Purret» og «Sist kontakt» i dag i Booking.
- *  Ikke kontaktet ✓                       «Har kontaktet» krysses av i Bedriftsliste (kontaktet på annen måte).
+ *  Ikke kontaktet ✓ / ✗                   «Har kontaktet» / «Ikke aktuell» krysses av i Bedriftsliste.
  *  Bedriftsliste → «Annen kontakt»        Skriver du inn en kontakt selv, er den ikke lenger «hentet fra nett» (oransje).
  *  Til godkjenning → Godkjenn / Avvis     Forslaget skrives inn (eller forkastes). Se Godkjenning.gs.
  *
@@ -3462,24 +3560,26 @@ function hakeOversikt_(e) {
 
 function hakeIkkeKontaktet_(e) {
   if (!erAvkrysset_(e)) return;
-  if (e.range.getColumn() !== 2 || e.range.getRow() <= IK_HODE) return;
-  const bedrift = String(e.range.getSheet().getRange(e.range.getRow(), 4).getValue()).trim();
+  const c = e.range.getColumn();
+  if ((c !== 2 && c !== 3) || e.range.getRow() <= IK_HODE) return;
+  const bedrift = String(e.range.getSheet().getRange(e.range.getRow(), IK_BEDRIFT).getValue()).trim();
   e.range.setValue(false);
   if (!bedrift) return;
 
   const liste = bedriftslisteArk_(e.source);
   if (!liste || liste.getLastRow() < 2) return;
   const h = liste.getRange(1, 1, 1, liste.getLastColumn()).getValues()[0].map(v => String(v).trim());
-  const kManuelt = h.indexOf(BL_KOLONNER.manuelt) + 1;
-  if (!kManuelt) return;
+  const kol = h.indexOf(c === 2 ? BL_KOLONNER.manuelt : BL_KOLONNER.ikkeAktuell) + 1;
+  if (!kol) return;
   const navn = liste.getRange(2, 1, liste.getLastRow() - 1, 1).getValues().map(v => String(v[0]).trim());
   let funnet = 0;
   navn.forEach((n, i) => {
     if (n !== bedrift) return;
-    liste.getRange(i + 2, kManuelt).setValue(true); // alle rader med samme navn (bedriften kan stå under to kategorier)
+    liste.getRange(i + 2, kol).setValue(true); // alle rader med samme navn (bedriften kan stå under to kategorier)
     funnet++;
   });
-  if (funnet) loggManuelt_(e.source, bedrift, 'Krysset av i «' + KONFIG.ARK_IKKE_KONTAKTET + '»: kontaktet på annen måte');
+  if (funnet) loggManuelt_(e.source, bedrift, 'Krysset av i «' + KONFIG.ARK_IKKE_KONTAKTET + '»: ' +
+    (c === 2 ? 'kontaktet på annen måte' : 'ikke aktuell i år'));
 }
 
 /** Skriver du selv i «Annen kontakt», er kontakten ikke lenger hentet fra nettet: fjern kilden (og den oransje fargen). */
@@ -3683,6 +3783,12 @@ function utforBeslutning_(ss, data, godkjent) {
         const kol = h.indexOf(BL_KOLONNER[k]) + 1;
         if (kol) rader.forEach(r => liste.getRange(r, kol).clearContent());
       });
+      return '';
+    }
+    case 'blBooking': {
+      if (!godkjent || !liste) return '';
+      const k = overskrifter_(liste).indexOf(BL_KOLONNER.bookingNavn) + 1;
+      if (k) raderPaaNavn_(liste, 1, data.bedrift).forEach(r => liste.getRange(r, k).setValue(data.verdi));
       return '';
     }
     case 'nett': {

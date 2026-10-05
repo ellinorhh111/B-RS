@@ -3,7 +3,7 @@
  *
  *  Oversikt → «Trenger svar fra deg» ✓   «Trenger svar» settes til Nei i Booking (du har svart / trenger ikke svar).
  *  Oversikt → «Bør purres» ✓              Status blir «Purret» og «Sist kontakt» i dag i Booking.
- *  Ikke kontaktet ✓                       «Har kontaktet» krysses av i Bedriftsliste (kontaktet på annen måte).
+ *  Ikke kontaktet ✓ / ✗                   «Har kontaktet» / «Ikke aktuell» krysses av i Bedriftsliste.
  *  Bedriftsliste → «Annen kontakt»        Skriver du inn en kontakt selv, er den ikke lenger «hentet fra nett» (oransje).
  *  Til godkjenning → Godkjenn / Avvis     Forslaget skrives inn (eller forkastes). Se Godkjenning.gs.
  *
@@ -87,24 +87,26 @@ function hakeOversikt_(e) {
 
 function hakeIkkeKontaktet_(e) {
   if (!erAvkrysset_(e)) return;
-  if (e.range.getColumn() !== 2 || e.range.getRow() <= IK_HODE) return;
-  const bedrift = String(e.range.getSheet().getRange(e.range.getRow(), 4).getValue()).trim();
+  const c = e.range.getColumn();
+  if ((c !== 2 && c !== 3) || e.range.getRow() <= IK_HODE) return;
+  const bedrift = String(e.range.getSheet().getRange(e.range.getRow(), IK_BEDRIFT).getValue()).trim();
   e.range.setValue(false);
   if (!bedrift) return;
 
   const liste = bedriftslisteArk_(e.source);
   if (!liste || liste.getLastRow() < 2) return;
   const h = liste.getRange(1, 1, 1, liste.getLastColumn()).getValues()[0].map(v => String(v).trim());
-  const kManuelt = h.indexOf(BL_KOLONNER.manuelt) + 1;
-  if (!kManuelt) return;
+  const kol = h.indexOf(c === 2 ? BL_KOLONNER.manuelt : BL_KOLONNER.ikkeAktuell) + 1;
+  if (!kol) return;
   const navn = liste.getRange(2, 1, liste.getLastRow() - 1, 1).getValues().map(v => String(v[0]).trim());
   let funnet = 0;
   navn.forEach((n, i) => {
     if (n !== bedrift) return;
-    liste.getRange(i + 2, kManuelt).setValue(true); // alle rader med samme navn (bedriften kan stå under to kategorier)
+    liste.getRange(i + 2, kol).setValue(true); // alle rader med samme navn (bedriften kan stå under to kategorier)
     funnet++;
   });
-  if (funnet) loggManuelt_(e.source, bedrift, 'Krysset av i «' + KONFIG.ARK_IKKE_KONTAKTET + '»: kontaktet på annen måte');
+  if (funnet) loggManuelt_(e.source, bedrift, 'Krysset av i «' + KONFIG.ARK_IKKE_KONTAKTET + '»: ' +
+    (c === 2 ? 'kontaktet på annen måte' : 'ikke aktuell i år'));
 }
 
 /** Skriver du selv i «Annen kontakt», er kontakten ikke lenger hentet fra nettet: fjern kilden (og den oransje fargen). */

@@ -180,6 +180,12 @@ function utforBeslutning_(ss, data, godkjent) {
       });
       return '';
     }
+    case 'blBooking': {
+      if (!godkjent || !liste) return '';
+      const k = overskrifter_(liste).indexOf(BL_KOLONNER.bookingNavn) + 1;
+      if (k) raderPaaNavn_(liste, 1, data.bedrift).forEach(r => liste.getRange(r, k).setValue(data.verdi));
+      return '';
+    }
     case 'nett': {
       if (!liste) return '';
       const h = overskrifter_(liste);
