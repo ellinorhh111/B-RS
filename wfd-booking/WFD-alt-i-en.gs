@@ -2303,6 +2303,13 @@ function lagOversikt_(ss, tabell) {
   };
   const bareIBooking_ = st => BOOKING_MONSTER[st]
     ? `+ARRAYFORMULA(SUMPRODUCT(${bareIBookingVilkar}*REGEXMATCH(${omr('status')}&"","${BOOKING_MONSTER[st]}")))` : '';
+  // Bekreftet, I dialog og Takket nei telles rett fra Booking med samme formel som flisene øverst, så tallene
+  // alltid er like. (Kontaktstatus i Bedriftsliste lar Booking-svaret vinne, så de telles ikke to ganger.)
+  const FRA_BOOKING = {
+    'Bekreftet': fliser[0][1],
+    'I dialog': fliser[1][1],
+    'Takket nei': `=COUNTIF(${omr('status')},"${KONFIG.STATUS_NEI}")`,
+  };
   const unikeIBedriftsliste_ = kriterium => blNavnKol
     ? `=IFERROR(COUNTUNIQUEIFS(${blOmr(blNavnKol)},${blOmr(blStatusKol)},${kriterium},${blOmr(blNavnKol)},"<>"),0)+` +
       `IFERROR(COUNTUNIQUEIFS(${L}A2:A,${blOmr(blStatusKol)},${kriterium},${blOmr(blNavnKol)},""),0)`
@@ -2317,7 +2324,7 @@ function lagOversikt_(ss, tabell) {
     etikett.merge();
     etikett.getCell(1, 1).setValue(st);
     etikett.setBackground(bg).setFontColor(fg).setFontWeight('bold');
-    ark.getRange(r, 4).setFormula(blStatusKol ? unikeIBedriftsliste_(`"${st}"`) + (blNavnKol ? bareIBooking_(st) : '')
+    ark.getRange(r, 4).setFormula(blStatusKol ? (FRA_BOOKING[st] || unikeIBedriftsliste_(`"${st}"`) + (blNavnKol ? bareIBooking_(st) : ''))
       : `=COUNTIF(${omr('status')},"${st}")`)
       .setHorizontalAlignment('center').setFontWeight('bold');
     const strek = ark.getRange(r, 5, 1, 4);
@@ -3000,7 +3007,8 @@ function stilBedriftsliste_(ark, kol) {
     ark.getRange(2, k + 1, maks, 1).setWrapStrategy(SpreadsheetApp.WrapStrategy.CLIP).setHorizontalAlignment('left'));
   ark.getRange(2, kol.kategori + 1, maks, 1).setFontColor(FARGE.dempet);
 
-  // Kontaktstatus regnes ut av formelen i overskriften: «Ikke aktuell» → status fra Booking → kontaktet i høst → ikke kontaktet.
+  // Kontaktstatus regnes ut av formelen i overskriften: Bekreftet/Takket nei/I dialog fra Booking → «Ikke aktuell» →
+  // kontaktet (Booking, i høst eller avkrysset) → ikke kontaktet. Svaret i Booking vinner alltid over «Ikke aktuell».
   let fraBooking = '""';
   try {
     const t = lesBedrifter_();
@@ -3011,9 +3019,10 @@ function stilBedriftsliste_(ark, kol) {
   } catch (e) { /* ingen booking-fane ennå */ }
   ark.getRange(1, kol.kontaktstatus + 1).setFormula(
     `={"${BL_KOLONNER.kontaktstatus}";ARRAYFORMULA(IF((A2:A="")+(${omr('kategori')}=""),"",` +
-    `IF(${omr('ikkeAktuell')}=TRUE,"Ikke aktuell",LET(bs,${fraBooking},` +
+    `LET(bs,${fraBooking},` +
     `IF(bs="Bekreftet","Bekreftet",IF(bs="${KONFIG.STATUS_NEI}","Takket nei",` +
     `IF(REGEXMATCH(bs,"^(I dialog|Interessert|Tilbud sendt)$"),"I dialog",` +
+    `IF(${omr('ikkeAktuell')}=TRUE,"Ikke aktuell",` +
     `IF((bs="Kontaktet")+(bs="Purret")+(${omr('host')}<>"")+(${omr('manuelt')}=TRUE),"Kontaktet – venter på svar",` +
     `"Ikke kontaktet"))))))))}`);
 

@@ -541,6 +541,13 @@ function lagOversikt_(ss, tabell) {
   };
   const bareIBooking_ = st => BOOKING_MONSTER[st]
     ? `+ARRAYFORMULA(SUMPRODUCT(${bareIBookingVilkar}*REGEXMATCH(${omr('status')}&"","${BOOKING_MONSTER[st]}")))` : '';
+  // Bekreftet, I dialog og Takket nei telles rett fra Booking med samme formel som flisene øverst, så tallene
+  // alltid er like. (Kontaktstatus i Bedriftsliste lar Booking-svaret vinne, så de telles ikke to ganger.)
+  const FRA_BOOKING = {
+    'Bekreftet': fliser[0][1],
+    'I dialog': fliser[1][1],
+    'Takket nei': `=COUNTIF(${omr('status')},"${KONFIG.STATUS_NEI}")`,
+  };
   const unikeIBedriftsliste_ = kriterium => blNavnKol
     ? `=IFERROR(COUNTUNIQUEIFS(${blOmr(blNavnKol)},${blOmr(blStatusKol)},${kriterium},${blOmr(blNavnKol)},"<>"),0)+` +
       `IFERROR(COUNTUNIQUEIFS(${L}A2:A,${blOmr(blStatusKol)},${kriterium},${blOmr(blNavnKol)},""),0)`
@@ -555,7 +562,7 @@ function lagOversikt_(ss, tabell) {
     etikett.merge();
     etikett.getCell(1, 1).setValue(st);
     etikett.setBackground(bg).setFontColor(fg).setFontWeight('bold');
-    ark.getRange(r, 4).setFormula(blStatusKol ? unikeIBedriftsliste_(`"${st}"`) + (blNavnKol ? bareIBooking_(st) : '')
+    ark.getRange(r, 4).setFormula(blStatusKol ? (FRA_BOOKING[st] || unikeIBedriftsliste_(`"${st}"`) + (blNavnKol ? bareIBooking_(st) : ''))
       : `=COUNTIF(${omr('status')},"${st}")`)
       .setHorizontalAlignment('center').setFontWeight('bold');
     const strek = ark.getRange(r, 5, 1, 4);
