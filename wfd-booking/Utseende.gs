@@ -80,7 +80,9 @@ function ryddArbeidsbok() {
       'bedriftsnavnet. Kontakter hentet fra nettet legges i «Annen kontakt» og markeres oransje. Kategorirader utheves, ' +
       'og alle kolonnene får filterknapper');
   }
-  const bareBooking = blArk ? bareIBooking_(ss).mangler : [];
+  const iBooking = blArk ? bareIBooking_(ss) : { mangler: [], kobles: [] };
+  const bareBooking = iBooking.mangler;
+  if (iBooking.kobles.length) plan.push(iBooking.kobles.length + ' bedrifter i Bedriftsliste kobles til raden sin i Booking (samme navn)');
   if (bareBooking.length) {
     plan.push(bareBooking.length + ' bedrifter som bare står i Booking legges nederst i Bedriftsliste («' + NYE_FRA_BOOKING +
       '»): ' + bareBooking.slice(0, 6).map(m => m.navn).join(', ') + (bareBooking.length > 6 ? ' …' : ''));
@@ -144,7 +146,7 @@ function ryddArbeidsbok() {
     nettFylt = fyllNettkontakter_(blArk, kolBl);
   }
   const omdopt = gjorOmAutonavn_(lesBedrifter_(), nyeNavn);
-  const lagtTilListe = blArk && bareBooking.length ? leggBookingIBedriftsliste_() : [];
+  const lagtTilListe = blArk ? leggBookingIBedriftsliste_().lagtTil : [];
 
   // 5. Utseende
   tabell = plasserPakkeKolonne_(lesBedrifter_());
@@ -555,12 +557,12 @@ function lagOversikt_(ss, tabell) {
     // Det som står i Booking, men ikke i Bedriftsliste – så ingenting faller utenfor.
     const utenfor = ark.getRange(sist + 2, 2, 1, 2);
     utenfor.merge();
-    utenfor.getCell(1, 1).setValue('+ i Booking, ikke i Bedriftsliste');
+    utenfor.getCell(1, 1).setValue('+ i Booking, ikke koblet til Bedriftsliste');
     utenfor.setFontColor(FARGE.dempet);
     ark.getRange(sist + 2, 4).setFormula(blNavnKol
       ? `=SUMPRODUCT((${omr('bedrift')}<>"")*(COUNTIF(${blOmr(blNavnKol)},${omr('bedrift')})=0))` : '=""')
       .setFontColor(FARGE.dempet).setHorizontalAlignment('center');
-    ark.getRange(sist + 2, 5).setValue('legg dem til i Bedriftsliste, eller sjekk «Navn i Booking»').setFontColor(FARGE.dempet)
+    ark.getRange(sist + 2, 5).setValue('WFD → «Legg bedrifter fra Booking inn i Bedriftsliste» viser hvilke (ofte duplikater i Booking)').setFontColor(FARGE.dempet)
       .setFontSize(9);
   } else {
     total.getCell(1, 1).setValue('Rader i Booking (alle statuser)');

@@ -699,7 +699,7 @@ function utenKontaktperson_(ark) {
 
 /** Kjøres automatisk hver natt, så «Ikke kontaktet» alltid er oppdatert. */
 function nattligBedriftsliste() {
-  try { leggBookingIBedriftsliste_(); } catch (e) { console.warn('Booking → Bedriftsliste: ' + e.message); }
+  try { leggBookingIBedriftsliste_(); } catch (e) { console.warn('Booking → Bedriftsliste: ' + e.message); } // kobler og legger til
   startBlKjoring_();
   fortsettBedriftsliste();
 }
@@ -711,66 +711,97 @@ function nattligBedriftsliste() {
 
 const NYE_FRA_BOOKING = 'Nye fra Booking – flytt til riktig kategori';
 
-/** Bedrifter i Booking som ikke er koblet til (eller står med samme navn i) Bedriftsliste. */
+/**
+ * Bedrifter i Booking som ikke er koblet til en rad i Bedriftsliste (via «Navn i Booking»), delt i:
+ *   kobles     – står i Bedriftsliste med samme navn, men er ikke koblet ennå (koblingen er sikker og gjøres direkte)
+ *   mangler    – står ikke i Bedriftsliste og må legges til
+ *   duplikater – samme bedrift står flere ganger i Booking (bare én rad kan kobles; slett/slå sammen de andre)
+ *   venter     – en usikker kobling venter i «Til godkjenning»
+ * Bare lesing her, så planen kan vises før noe endres.
+ */
 function bareIBooking_(ss) {
   const liste = bedriftslisteArk_(ss);
-  if (!liste) return { liste: null, mangler: [] };
-  // Bare lesing her (ingen stil eller forslag), så planen kan vises før noe endres.
+  const tom = { liste, mangler: [], kobles: [], duplikater: [], venter: [] };
+  if (!liste) return tom;
   const h = overskrifter_(liste);
-  const kol = { bookingNavn: h.indexOf(BL_KOLONNER.bookingNavn) };
+  const kN = h.indexOf(BL_KOLONNER.bookingNavn);
   const antall = Math.max(liste.getLastRow() - 1, 0);
   const v = antall ? liste.getRange(2, 1, antall, liste.getLastColumn()).getValues() : [];
-  const koblet = {}, navn = {};
-  v.forEach(r => {
-    if (kol.bookingNavn >= 0 && String(r[kol.bookingNavn]).trim()) koblet[String(r[kol.bookingNavn]).trim()] = true;
+  const fet = antall ? liste.getRange(2, 1, antall, 1).getFontWeights().map(r => r[0] === 'bold') : [];
+  const koblet = {};
+  const blPaaNavn = {}; // normalisert navn → første rad (2-basert) og nåværende kobling
+  v.forEach((r, i) => {
+    const lenke = kN >= 0 ? String(r[kN]).trim() : '';
+    if (lenke) koblet[lenke] = true;
     const n = utenAksent_(normaliserNavn_(sokeNavn_(String(r[0]))));
-    if (n) navn[n] = true;
+    if (n && !fet[i] && !blPaaNavn[n]) blPaaNavn[n] = { rad: i + 2, lenke };
   });
+  const venterPaa = {};
+  godkjenninger_().forEach(g => { if (g.status === VENTER && g.data.type === 'blBooking') venterPaa[g.data.verdi] = true; });
+
   const tabell = lesBedrifter_();
-  const mangler = [];
+  const brukt = {};
   tabell.rader.forEach((r, i) => {
     const b = String(celle_(tabell, i, 'bedrift')).trim();
+    if (!b || koblet[b]) return;
     const n = utenAksent_(normaliserNavn_(sokeNavn_(b)));
-    if (!b || koblet[b] || navn[n]) return;
-    navn[n] = true;
-    mangler.push({ booking: b, navn: sokeNavn_(b) });
+    if (venterPaa[b]) { tom.venter.push(b); return; }
+    const bl = blPaaNavn[n];
+    if (bl && !bl.lenke && !brukt[n]) { tom.kobles.push({ booking: b, rad: bl.rad }); brukt[n] = true; return; }
+    if (bl || brukt[n]) { tom.duplikater.push({ booking: b, andre: bl && bl.lenke ? bl.lenke : '' }); return; }
+    brukt[n] = true;
+    tom.mangler.push({ booking: b, navn: sokeNavn_(b) });
   });
-  return { liste, kol, mangler };
+  return tom;
 }
 
-/** Legger bedriftene som bare står i Booking nederst i Bedriftsliste, under en egen kategori. Returnerer navnene. */
+/** Kobler og legger til det som mangler. Returnerer { lagtTil, koblet }. */
 function leggBookingIBedriftsliste_() {
   const ss = hentRegneark_();
-  const { liste, mangler } = bareIBooking_(ss);
-  if (!liste || !mangler.length) return [];
+  const { liste, mangler, kobles } = bareIBooking_(ss);
+  if (!liste || (!mangler.length && !kobles.length)) return { lagtTil: [], koblet: [] };
   const kol = sikreBlKolonner_(liste);
-  const navnA = liste.getRange(1, 1, Math.max(liste.getLastRow(), 1), 1).getValues().map(r => String(r[0]).trim());
-  if (navnA.indexOf(NYE_FRA_BOOKING) < 0) {
-    const r = liste.getLastRow() + 1;
-    liste.getRange(r, 1).setValue(NYE_FRA_BOOKING).setFontWeight('bold');
+  kobles.forEach(k => liste.getRange(k.rad, kol.bookingNavn + 1).setValue(k.booking));
+  if (mangler.length) {
+    const navnA = liste.getRange(1, 1, Math.max(liste.getLastRow(), 1), 1).getValues().map(r => String(r[0]).trim());
+    if (navnA.indexOf(NYE_FRA_BOOKING) < 0) {
+      liste.getRange(liste.getLastRow() + 1, 1).setValue(NYE_FRA_BOOKING).setFontWeight('bold');
+    }
+    const start = liste.getLastRow() + 1;
+    const bredde = liste.getLastColumn();
+    liste.getRange(start, 1, mangler.length, bredde).setValues(mangler.map(m => {
+      const rad = new Array(bredde).fill('');
+      rad[0] = m.navn;
+      rad[kol.bookingNavn] = m.booking; // sikker kobling: raden kommer fra Booking
+      return rad;
+    })).setFontWeight('normal');
   }
-  const start = liste.getLastRow() + 1;
-  const bredde = liste.getLastColumn();
-  liste.getRange(start, 1, mangler.length, bredde).setValues(mangler.map(m => {
-    const rad = new Array(bredde).fill('');
-    rad[0] = m.navn;
-    rad[kol.bookingNavn] = m.booking; // sikker kobling: raden kommer fra Booking
-    return rad;
-  })).setFontWeight('normal');
-  sikreBlKolonner_(liste); // kategori, avkrysning, filter og farger for de nye radene
-  return mangler.map(m => m.navn);
+  sikreBlKolonner_(liste); // kategori, avkrysning, filter og farger
+  return { lagtTil: mangler.map(m => m.navn), koblet: kobles.map(k => k.booking) };
 }
 
 /** Menyvalg: legg bedrifter som bare står i Booking inn i Bedriftsliste. */
 function leggBookingIBedriftslisteMeny() {
   const ui = SpreadsheetApp.getUi();
-  const { mangler } = bareIBooking_(SpreadsheetApp.getActiveSpreadsheet());
-  if (!mangler.length) { ui.alert('Alle bedriftene i Booking står allerede i Bedriftsliste. 🎉'); return; }
+  const { mangler, kobles, duplikater, venter } = bareIBooking_(SpreadsheetApp.getActiveSpreadsheet());
+  const deler = [];
+  if (kobles.length) deler.push(kobles.length + ' står allerede i Bedriftsliste og kobles til raden sin i Booking:\n• ' +
+    kobles.map(k => k.booking).join('\n• '));
+  if (mangler.length) deler.push(mangler.length + ' legges nederst i Bedriftsliste under «' + NYE_FRA_BOOKING + '»:\n• ' +
+    mangler.map(m => m.navn).join('\n• '));
+  const info = [];
+  if (duplikater.length) info.push('Står to ganger i Booking (bare én rad kan kobles – slett eller slå sammen den andre):\n• ' +
+    duplikater.map(d => d.booking + (d.andre ? '  (samme som «' + d.andre + '»)' : '')).join('\n• '));
+  if (venter.length) info.push('Venter på godkjenning i «' + KONFIG.ARK_GODKJENNING + '»:\n• ' + venter.join('\n• '));
+  if (!deler.length) {
+    ui.alert(info.length ? 'Ingenting å legge til.\n\n' + info.join('\n\n') : 'Alle bedriftene i Booking står i Bedriftsliste. 🎉');
+    return;
+  }
   const svar = ui.alert('Legg bedrifter fra Booking inn i Bedriftsliste',
-    mangler.length + ' bedrifter står i Booking, men ikke i Bedriftsliste:\n\n• ' + mangler.map(m => m.navn).join('\n• ') +
-    '\n\nDe legges nederst i Bedriftsliste under «' + NYE_FRA_BOOKING + '», koblet til raden sin i Booking. ' +
-    'Flytt dem til riktig kategori når det passer (klipp ut og lim inn raden). Fortsette?', ui.ButtonSet.YES_NO);
+    deler.join('\n\n') + (info.length ? '\n\n' + info.join('\n\n') : '') + '\n\nFortsette?', ui.ButtonSet.YES_NO);
   if (svar !== ui.Button.YES) return;
-  const lagt = leggBookingIBedriftsliste_();
-  ui.alert(lagt.length + ' bedrifter er lagt til nederst i Bedriftsliste.');
+  const r = leggBookingIBedriftsliste_();
+  ui.alert(r.koblet.length + ' koblet og ' + r.lagtTil.length + ' lagt til i Bedriftsliste.' +
+    (r.lagtTil.length ? ' Flytt de nye til riktig kategori når det passer.' : '') +
+    (info.length ? '\n\nGjenstår:\n' + info.join('\n\n') : ''));
 }
