@@ -688,7 +688,7 @@ function lagInvitasjoner() {
     const tekst = (norsk ? KONFIG.INVITASJON_NO : KONFIG.INVITASJON_EN)
       .replace(/\{navn\}/g, hilsen).replace(/\{bedrift\}/g, k.bedrift);
     const kropp = tekst + '\n' + (norsk ? KONFIG.SIGNATUR : KONFIG.SIGNATUR_EN).replace(/^\n+/, '\n');
-    const valg = {};
+    const valg = { htmlBody: somHtml_(kropp) }; // HTML: fyller hele bredden (ren tekst blir smal)
     const pdf = norsk ? (pdfNo || pdfEn) : (pdfEn || pdfNo);
     if (pdf) valg.attachments = [pdf];
     if (fra) valg.from = fra;

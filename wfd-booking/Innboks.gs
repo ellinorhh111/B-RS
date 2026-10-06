@@ -431,6 +431,20 @@ function settLenke_(tabell, rad, nokkel, tekst, url) {
 // Systemet husker hvilke utkast det selv har laget. Et utkast som du har redigert
 // (lagret senere enn da det ble laget), blir aldri slettet eller erstattet automatisk.
 
+/**
+ * Samme tekst som HTML, så e-posten fyller hele bredden hos mottakeren. Ren tekst brytes ellers hardt
+ * etter ca. 76 tegn når Gmail sender den, og blir en smal stripe i de fleste e-postprogrammer.
+ */
+function somHtml_(tekst) {
+  const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const lenker = t => t
+    .replace(/(https?:\/\/[^\s<]*[^\s<.,;:!?)])/g, '<a href="$1">$1</a>')
+    .replace(/(^|[\s(])([\w.+-]+@[\w-]+(\.[\w-]+)+)/g, '$1<a href="mailto:$2">$2</a>');
+  return '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5">' +
+    String(tekst).trim().split(/\n{2,}/).map(avsnitt => '<p style="margin:0 0 12px">' +
+      lenker(esc(avsnitt)).replace(/\n/g, '<br>') + '</p>').join('') + '</div>';
+}
+
 /** Lager svarutkast i tråden. Returnerer false hvis du allerede har et eget eller redigert utkast der. */
 function lagUtkast_(trad, siste, tekst) {
   const tradId = trad.getId();
@@ -441,7 +455,8 @@ function lagUtkast_(trad, siste, tekst) {
 
   slettVarUtkast_(tradId);
   const kropp = tekst.trim() + '\n' + KONFIG.SIGNATUR.replace(/^\n+/, '');
-  const utkast = KONFIG.SVAR_TIL_ALLE ? siste.createDraftReplyAll(kropp) : siste.createDraftReply(kropp);
+  const valg = { htmlBody: somHtml_(kropp) };
+  const utkast = KONFIG.SVAR_TIL_ALLE ? siste.createDraftReplyAll(kropp, valg) : siste.createDraftReply(kropp, valg);
   const melding = utkast.getMessage();
   PropertiesService.getScriptProperties().setProperty('UTKAST_' + tradId, JSON.stringify({
     utkastId: utkast.getId(), meldingId: melding.getId(), lagret: melding.getDate().getTime(),
