@@ -772,6 +772,24 @@ function bareIBooking_(ss) {
   return tom;
 }
 
+/** Bedrifter som står flere ganger i Bedriftsliste (samme kobling til Booking, eller samme navn). */
+function doblerIBedriftsliste_(ss) {
+  const liste = bedriftslisteArk_(ss);
+  if (!liste || liste.getLastRow() < 2) return [];
+  const h = overskrifter_(liste);
+  const kN = h.indexOf(BL_KOLONNER.bookingNavn);
+  const kK = h.indexOf(BL_KOLONNER.kategori);
+  const v = liste.getRange(2, 1, liste.getLastRow() - 1, liste.getLastColumn()).getValues();
+  const grupper = {};
+  v.forEach(r => {
+    const navn = String(r[0]).trim();
+    if (!navn || (kK >= 0 && !String(r[kK]).trim())) return; // kategorirader
+    const nokkel = kN >= 0 && rensNavn_(r[kN]) ? 'b|' + rensNavn_(r[kN]).toLowerCase() : 'n|' + utenAksent_(normaliserNavn_(sokeNavn_(navn)));
+    (grupper[nokkel] = grupper[nokkel] || []).push(navn + (kK >= 0 ? ' (' + r[kK] + ')' : ''));
+  });
+  return Object.keys(grupper).filter(k => grupper[k].length > 1).map(k => grupper[k].join(' og '));
+}
+
 /** Kobler og legger til det som mangler. Returnerer { lagtTil, koblet }. */
 function leggBookingIBedriftsliste_() {
   const ss = hentRegneark_();
@@ -810,6 +828,9 @@ function leggBookingIBedriftslisteMeny() {
   if (duplikater.length) info.push('Står to ganger i Booking (bare én rad kan kobles – slett eller slå sammen den andre):\n• ' +
     duplikater.map(d => d.booking + (d.andre ? '  (samme som «' + d.andre + '»)' : '')).join('\n• '));
   if (venter.length) info.push('Venter på godkjenning i «' + KONFIG.ARK_GODKJENNING + '»:\n• ' + venter.join('\n• '));
+  const doble = doblerIBedriftsliste_(SpreadsheetApp.getActiveSpreadsheet());
+  if (doble.length) info.push('Står mer enn én gang i Bedriftsliste (telles bare én gang på Oversikt – slett den ene raden ' +
+    'hvis det ikke er meningen):\n• ' + doble.join('\n• '));
   if (!deler.length) {
     ui.alert(info.length ? 'Ingenting å legge til.\n\n' + info.join('\n\n') : 'Alle bedriftene i Booking står i Bedriftsliste. 🎉');
     return;

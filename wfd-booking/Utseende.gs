@@ -528,6 +528,12 @@ function lagOversikt_(ss, tabell) {
   const blNavnKol = liste ? kolonneMedNavn_(liste, BL_KOLONNER.bookingNavn) : 0;
   const L = liste ? "'" + liste.getName() + "'!" : '';
   const blOmr = k => L + kolonneBokstav_(k) + '2:' + kolonneBokstav_(k);
+  // Hver bedrift telles én gang, selv om den står flere ganger i Bedriftsliste (f.eks. under to kategorier):
+  // koblede rader telles per rad i Booking, ukoblede per bedriftsnavn.
+  const unikeIBedriftsliste_ = kriterium => blNavnKol
+    ? `=IFERROR(COUNTUNIQUEIFS(${blOmr(blNavnKol)},${blOmr(blStatusKol)},${kriterium},${blOmr(blNavnKol)},"<>"),0)+` +
+      `IFERROR(COUNTUNIQUEIFS(${L}A2:A,${blOmr(blStatusKol)},${kriterium},${blOmr(blNavnKol)},""),0)`
+    : `=COUNTIF(${blOmr(blStatusKol)},${kriterium})`;
   ark.getRange('B8').setValue(blStatusKol ? 'Bedriftsliste – status' : 'Status').setFontSize(13).setFontWeight('bold');
   const forste = 9;
   const rekker = blStatusKol ? BL_STATUSER : statuser.map(st => [st].concat(STATUSFARGE[st] || ['#F3F4F6', '#374151']));
@@ -538,7 +544,7 @@ function lagOversikt_(ss, tabell) {
     etikett.merge();
     etikett.getCell(1, 1).setValue(st);
     etikett.setBackground(bg).setFontColor(fg).setFontWeight('bold');
-    ark.getRange(r, 4).setFormula(blStatusKol ? `=COUNTIF(${blOmr(blStatusKol)},"${st}")` : `=COUNTIF(${omr('status')},"${st}")`)
+    ark.getRange(r, 4).setFormula(blStatusKol ? unikeIBedriftsliste_(`"${st}"`) : `=COUNTIF(${omr('status')},"${st}")`)
       .setHorizontalAlignment('center').setFontWeight('bold');
     const strek = ark.getRange(r, 5, 1, 4);
     strek.merge();
@@ -553,7 +559,10 @@ function lagOversikt_(ss, tabell) {
     .setBorder(true, null, null, null, null, null, FARGE.tekst, SpreadsheetApp.BorderStyle.SOLID);
   if (blStatusKol) {
     total.getCell(1, 1).setValue('Bedrifter i Bedriftsliste');
-    ark.getRange(sist + 1, 4).setFormula(`=COUNTIF(${blOmr(blStatusKol)},"?*")`);
+    ark.getRange(sist + 1, 4).setFormula(unikeIBedriftsliste_('"?*"'));
+    ark.getRange(sist + 1, 5).setFormula(`=IFERROR(IF(COUNTIF(${blOmr(blStatusKol)},"?*")>D${sist + 1},` +
+      `COUNTIF(${blOmr(blStatusKol)},"?*")-D${sist + 1}&" bedrifter står mer enn én gang i Bedriftsliste – telles én gang",""),"")`)
+      .setFontColor(FARGE.dempet).setFontSize(9);
     // Det som står i Booking, men ikke i Bedriftsliste – så ingenting faller utenfor.
     const utenfor = ark.getRange(sist + 2, 2, 1, 2);
     utenfor.merge();
