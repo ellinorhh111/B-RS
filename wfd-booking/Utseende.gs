@@ -530,11 +530,22 @@ function lagOversikt_(ss, tabell) {
   const blOmr = k => L + kolonneBokstav_(k) + '2:' + kolonneBokstav_(k);
   // Hver bedrift telles én gang, selv om den står flere ganger i Bedriftsliste (f.eks. under to kategorier):
   // koblede rader telles per rad i Booking, ukoblede per bedriftsnavn.
+  // Bedrifter som bare står i Booking (ikke koblet til Bedriftsliste) telles med under sin Booking-status,
+  // så tallene alltid stemmer med Booking.
+  const bareIBookingVilkar = blNavnKol
+    ? `(${rensFormel_(omr('bedrift'))}<>"")*ISNA(MATCH(${rensFormel_(omr('bedrift'))},${rensFormel_(blOmr(blNavnKol))},0))` : '0';
+  const BOOKING_MONSTER = {
+    'Bekreftet': '^Bekreftet$', 'I dialog': '^(I dialog|Interessert|Tilbud sendt)$',
+    'Kontaktet – venter på svar': '^(Kontaktet|Purret)$', 'Takket nei': '^' + KONFIG.STATUS_NEI + '$',
+    'Ikke kontaktet': '^(' + KONFIG.STATUSER[0] + ')?$',
+  };
+  const bareIBooking_ = st => BOOKING_MONSTER[st]
+    ? `+ARRAYFORMULA(SUMPRODUCT(${bareIBookingVilkar}*REGEXMATCH(${omr('status')}&"","${BOOKING_MONSTER[st]}")))` : '';
   const unikeIBedriftsliste_ = kriterium => blNavnKol
     ? `=IFERROR(COUNTUNIQUEIFS(${blOmr(blNavnKol)},${blOmr(blStatusKol)},${kriterium},${blOmr(blNavnKol)},"<>"),0)+` +
       `IFERROR(COUNTUNIQUEIFS(${L}A2:A,${blOmr(blStatusKol)},${kriterium},${blOmr(blNavnKol)},""),0)`
     : `=COUNTIF(${blOmr(blStatusKol)},${kriterium})`;
-  ark.getRange('B8').setValue(blStatusKol ? 'Bedriftsliste – status' : 'Status').setFontSize(13).setFontWeight('bold');
+  ark.getRange('B8').setValue(blStatusKol ? 'Alle bedrifter – status' : 'Status').setFontSize(13).setFontWeight('bold');
   const forste = 9;
   const rekker = blStatusKol ? BL_STATUSER : statuser.map(st => [st].concat(STATUSFARGE[st] || ['#F3F4F6', '#374151']));
   const sist = forste + rekker.length - 1;
@@ -544,7 +555,8 @@ function lagOversikt_(ss, tabell) {
     etikett.merge();
     etikett.getCell(1, 1).setValue(st);
     etikett.setBackground(bg).setFontColor(fg).setFontWeight('bold');
-    ark.getRange(r, 4).setFormula(blStatusKol ? unikeIBedriftsliste_(`"${st}"`) : `=COUNTIF(${omr('status')},"${st}")`)
+    ark.getRange(r, 4).setFormula(blStatusKol ? unikeIBedriftsliste_(`"${st}"`) + (blNavnKol ? bareIBooking_(st) : '')
+      : `=COUNTIF(${omr('status')},"${st}")`)
       .setHorizontalAlignment('center').setFontWeight('bold');
     const strek = ark.getRange(r, 5, 1, 4);
     strek.merge();
@@ -558,21 +570,19 @@ function lagOversikt_(ss, tabell) {
   ark.getRange(sist + 1, 4).setFontWeight('bold').setHorizontalAlignment('center')
     .setBorder(true, null, null, null, null, null, FARGE.tekst, SpreadsheetApp.BorderStyle.SOLID);
   if (blStatusKol) {
-    total.getCell(1, 1).setValue('Bedrifter i Bedriftsliste');
-    ark.getRange(sist + 1, 4).setFormula(unikeIBedriftsliste_('"?*"'));
+    total.getCell(1, 1).setValue('Bedrifter totalt');
+    ark.getRange(sist + 1, 4).setFormula(`=SUM(D${forste}:D${sist})`);
     ark.getRange(sist + 1, 5).setFormula(`=IFERROR(IF(COUNTIF(${blOmr(blStatusKol)},"?*")>D${sist + 1},` +
-      `COUNTIF(${blOmr(blStatusKol)},"?*")-D${sist + 1}&" bedrifter står mer enn én gang i Bedriftsliste – telles én gang",""),"")`)
+      `COUNTIF(${blOmr(blStatusKol)},"?*")-(D${sist + 1}-D${sist + 2})&" bedrifter står mer enn én gang i Bedriftsliste – telles én gang",""),"")`)
       .setFontColor(FARGE.dempet).setFontSize(9);
     // Det som står i Booking, men ikke i Bedriftsliste – så ingenting faller utenfor.
     const utenfor = ark.getRange(sist + 2, 2, 1, 2);
     utenfor.merge();
-    utenfor.getCell(1, 1).setValue('+ i Booking, ikke koblet til Bedriftsliste');
+    utenfor.getCell(1, 1).setValue('herav bare i Booking');
     utenfor.setFontColor(FARGE.dempet);
-    ark.getRange(sist + 2, 4).setFormula(blNavnKol
-      ? `=ARRAYFORMULA(SUMPRODUCT((${rensFormel_(omr('bedrift'))}<>"")*ISNA(MATCH(${rensFormel_(omr('bedrift'))},` +
-        `${rensFormel_(blOmr(blNavnKol))},0))))` : '=""')
+    ark.getRange(sist + 2, 4).setFormula(blNavnKol ? `=ARRAYFORMULA(SUMPRODUCT(${bareIBookingVilkar}))` : '=""')
       .setFontColor(FARGE.dempet).setHorizontalAlignment('center');
-    ark.getRange(sist + 2, 5).setValue('WFD → «Legg bedrifter fra Booking inn i Bedriftsliste» viser hvilke (ofte duplikater i Booking)').setFontColor(FARGE.dempet)
+    ark.getRange(sist + 2, 5).setValue('telles med over, men står ikke i Bedriftsliste – WFD → «Legg bedrifter fra Booking inn i Bedriftsliste» viser hvilke').setFontColor(FARGE.dempet)
       .setFontSize(9);
   } else {
     total.getCell(1, 1).setValue('Rader i Booking (alle statuser)');
