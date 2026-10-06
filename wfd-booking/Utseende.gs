@@ -560,7 +560,8 @@ function lagOversikt_(ss, tabell) {
     utenfor.getCell(1, 1).setValue('+ i Booking, ikke koblet til Bedriftsliste');
     utenfor.setFontColor(FARGE.dempet);
     ark.getRange(sist + 2, 4).setFormula(blNavnKol
-      ? `=SUMPRODUCT((${omr('bedrift')}<>"")*(COUNTIF(${blOmr(blNavnKol)},${omr('bedrift')})=0))` : '=""')
+      ? `=ARRAYFORMULA(SUMPRODUCT((${rensFormel_(omr('bedrift'))}<>"")*ISNA(MATCH(${rensFormel_(omr('bedrift'))},` +
+        `${rensFormel_(blOmr(blNavnKol))},0))))` : '=""')
       .setFontColor(FARGE.dempet).setHorizontalAlignment('center');
     ark.getRange(sist + 2, 5).setValue('WFD → «Legg bedrifter fra Booking inn i Bedriftsliste» viser hvilke (ofte duplikater i Booking)').setFontColor(FARGE.dempet)
       .setFontSize(9);

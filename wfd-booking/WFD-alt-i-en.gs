@@ -2316,7 +2316,8 @@ function lagOversikt_(ss, tabell) {
     utenfor.getCell(1, 1).setValue('+ i Booking, ikke koblet til Bedriftsliste');
     utenfor.setFontColor(FARGE.dempet);
     ark.getRange(sist + 2, 4).setFormula(blNavnKol
-      ? `=SUMPRODUCT((${omr('bedrift')}<>"")*(COUNTIF(${blOmr(blNavnKol)},${omr('bedrift')})=0))` : '=""')
+      ? `=ARRAYFORMULA(SUMPRODUCT((${rensFormel_(omr('bedrift'))}<>"")*ISNA(MATCH(${rensFormel_(omr('bedrift'))},` +
+        `${rensFormel_(blOmr(blNavnKol))},0))))` : '=""')
       .setFontColor(FARGE.dempet).setHorizontalAlignment('center');
     ark.getRange(sist + 2, 5).setValue('WFD → «Legg bedrifter fra Booking inn i Bedriftsliste» viser hvilke (ofte duplikater i Booking)').setFontColor(FARGE.dempet)
       .setFontSize(9);
@@ -2862,6 +2863,16 @@ function fortsettBedriftsliste() {
   }
 }
 
+/** Navn sammenlignet uten usynlige forskjeller: hardt mellomrom, doble og etterfølgende mellomrom. */
+function rensNavn_(navn) {
+  return String(navn === undefined || navn === null ? '' : navn).replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Samme rensing i en formel (virker på hele kolonner inne i ARRAYFORMULA/SUMPRODUCT). */
+function rensFormel_(omr) {
+  return `TRIM(SUBSTITUTE(${omr},CHAR(160)," "))`;
+}
+
 /** Finner (eller lager) systemets kolonner i Bedriftsliste og gir dem felles stil. */
 function sikreBlKolonner_(ark) {
   const sisteKol = Math.max(ark.getLastColumn(), 1);
@@ -2970,7 +2981,8 @@ function stilBedriftsliste_(ark, kol) {
     const t = lesBedrifter_();
     const Bk = "'" + t.ark.getName() + "'!";
     const bk = n => Bk + kolonneBokstav_(t.kol[n] + 1) + '2:' + kolonneBokstav_(t.kol[n] + 1);
-    fraBooking = `IF(${omr('bookingNavn')}="","",IFERROR(VLOOKUP(${omr('bookingNavn')},{${bk('bedrift')},${bk('status')}},2,FALSE),""))`;
+    fraBooking = `IF(${omr('bookingNavn')}="","",IFERROR(VLOOKUP(${rensFormel_(omr('bookingNavn'))},` +
+      `{${rensFormel_(bk('bedrift'))},${bk('status')}},2,FALSE),""))`;
   } catch (e) { /* ingen booking-fane ennå */ }
   ark.getRange(1, kol.kontaktstatus + 1).setFormula(
     `={"${BL_KOLONNER.kontaktstatus}";ARRAYFORMULA(IF((A2:A="")+(${omr('kategori')}=""),"",` +
@@ -3041,22 +3053,28 @@ function koblTilBooking_(ark, kol, info) {
   let tabell;
   try { tabell = lesBedrifter_(); } catch (e) { return; }
   const booking = tabell.rader.map((r, i) => {
-    const navn = String(celle_(tabell, i, 'bedrift')).trim();
+    const ra = String(celle_(tabell, i, 'bedrift'));
+    const navn = rensNavn_(ra);
     const domener = [String(celle_(tabell, i, 'domene')).toLowerCase().trim()]
       .concat((String(celle_(tabell, i, 'epost')).match(/[A-Za-z0-9._%+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || []).map(domeneAv_))
       .filter(Boolean);
-    return { navn, nokkel: utenAksent_(normaliserNavn_(sokeNavn_(navn))), domener };
+    return { navn, ra, nokkel: utenAksent_(normaliserNavn_(sokeNavn_(navn))), domener };
   }).filter(b => b.navn);
   const antall = info.navn.length;
   const naa = ark.getRange(2, kol.bookingNavn + 1, antall, 1).getValues();
   const eposter = ark.getRange(2, 1, antall, ark.getLastColumn()).getValues();
   const ut = naa.map(r => [r[0]]);
-  const finnes = {};
-  booking.forEach(b => { finnes[b.navn] = true; });
+  const finnes = {}; // renset navn → navnet slik det står i Booking (med eventuelle ekstra mellomrom)
+  booking.forEach(b => { if (!finnes[b.navn]) finnes[b.navn] = b.ra; });
   let endret = false;
   info.navn.forEach((n, i) => {
-    const naaNavn = String(naa[i][0]).trim();
-    if (!n || info.fet[i] || (naaNavn && finnes[naaNavn])) return;
+    const naaNavn = rensNavn_(naa[i][0]);
+    if (naaNavn && finnes[naaNavn] !== undefined) {
+      // Skriv navnet nøyaktig som i Booking, så oppslag i arket alltid treffer.
+      if (String(naa[i][0]) !== finnes[naaNavn]) { ut[i] = [finnes[naaNavn]]; endret = true; }
+      return;
+    }
+    if (!n || info.fet[i]) return;
     if (naaNavn) { ut[i] = ['']; endret = true; } // raden i Booking har fått nytt navn eller er slettet: koble på nytt
     const nokkel = utenAksent_(normaliserNavn_(sokeNavn_(n)));
     let treff = booking.find(b => b.nokkel && b.nokkel === nokkel);
@@ -3066,7 +3084,7 @@ function koblTilBooking_(ark, kol, info) {
       const dom = d.map(domeneAv_).filter(Boolean);
       treff = booking.find(b => b.domener.some(x => dom.indexOf(x) >= 0));
     }
-    if (treff) { ut[i] = [treff.navn]; endret = true; return; }
+    if (treff) { ut[i] = [treff.ra]; endret = true; return; }
     const lik = booking.find(b => b.domener.some(x => domeneLignerNavn_(x, n)) || domeneLignerNavn_(b.navn.replace(/\s+/g, '') + '.x', n));
     if (lik) {
       foreslaa_(sokeNavn_(n), 'Bedriftsliste: hører til denne raden i Booking?', '', lik.navn,
@@ -3479,7 +3497,7 @@ function bareIBooking_(ss) {
   const koblet = {};
   const blPaaNavn = {}; // normalisert navn → første rad (2-basert) og nåværende kobling
   v.forEach((r, i) => {
-    const lenke = kN >= 0 ? String(r[kN]).trim() : '';
+    const lenke = kN >= 0 ? rensNavn_(r[kN]) : '';
     if (lenke) koblet[lenke] = true;
     const n = utenAksent_(normaliserNavn_(sokeNavn_(String(r[0]))));
     if (n && !fet[i] && !blPaaNavn[n]) blPaaNavn[n] = { rad: i + 2, lenke };
@@ -3490,15 +3508,15 @@ function bareIBooking_(ss) {
   const tabell = lesBedrifter_();
   const brukt = {};
   tabell.rader.forEach((r, i) => {
-    const b = String(celle_(tabell, i, 'bedrift')).trim();
+    const b = rensNavn_(celle_(tabell, i, 'bedrift'));
     if (!b || koblet[b]) return;
     const n = utenAksent_(normaliserNavn_(sokeNavn_(b)));
     if (venterPaa[b]) { tom.venter.push(b); return; }
     const bl = blPaaNavn[n];
-    if (bl && !bl.lenke && !brukt[n]) { tom.kobles.push({ booking: b, rad: bl.rad }); brukt[n] = true; return; }
+    if (bl && !bl.lenke && !brukt[n]) { tom.kobles.push({ booking: b, ra: String(celle_(tabell, i, 'bedrift')), rad: bl.rad }); brukt[n] = true; return; }
     if (bl || brukt[n]) { tom.duplikater.push({ booking: b, andre: bl && bl.lenke ? bl.lenke : '' }); return; }
     brukt[n] = true;
-    tom.mangler.push({ booking: b, navn: sokeNavn_(b) });
+    tom.mangler.push({ booking: b, ra: String(celle_(tabell, i, 'bedrift')), navn: sokeNavn_(b) });
   });
   return tom;
 }
@@ -3509,7 +3527,7 @@ function leggBookingIBedriftsliste_() {
   const { liste, mangler, kobles } = bareIBooking_(ss);
   if (!liste || (!mangler.length && !kobles.length)) return { lagtTil: [], koblet: [] };
   const kol = sikreBlKolonner_(liste);
-  kobles.forEach(k => liste.getRange(k.rad, kol.bookingNavn + 1).setValue(k.booking));
+  kobles.forEach(k => liste.getRange(k.rad, kol.bookingNavn + 1).setValue(k.ra || k.booking));
   if (mangler.length) {
     const navnA = liste.getRange(1, 1, Math.max(liste.getLastRow(), 1), 1).getValues().map(r => String(r[0]).trim());
     if (navnA.indexOf(NYE_FRA_BOOKING) < 0) {
@@ -3520,7 +3538,7 @@ function leggBookingIBedriftsliste_() {
     liste.getRange(start, 1, mangler.length, bredde).setValues(mangler.map(m => {
       const rad = new Array(bredde).fill('');
       rad[0] = m.navn;
-      rad[kol.bookingNavn] = m.booking; // sikker kobling: raden kommer fra Booking
+      rad[kol.bookingNavn] = m.ra || m.booking; // sikker kobling: raden kommer fra Booking (navnet nøyaktig som der)
       return rad;
     })).setFontWeight('normal');
   }
@@ -3718,8 +3736,8 @@ function hakeOversikt_(e) {
   const h = booking.getRange(1, 1, 1, booking.getLastColumn()).getValues()[0];
   const kBedrift = bookingKol_(h, 'bedrift');
   if (!kBedrift) return;
-  const navn = booking.getRange(2, kBedrift, booking.getLastRow() - 1, 1).getValues().map(v => String(v[0]).trim());
-  const i = navn.indexOf(bedrift);
+  const navn = booking.getRange(2, kBedrift, booking.getLastRow() - 1, 1).getValues().map(v => rensNavn_(v[0]));
+  const i = navn.indexOf(rensNavn_(bedrift));
   if (i < 0) return;
   const rad = i + 2;
 
@@ -3996,7 +4014,7 @@ function raderPaaNavn_(ark, kol, navn) {
   if (!ark || !kol || ark.getLastRow() < 2) return [];
   const ut = [];
   ark.getRange(2, kol, ark.getLastRow() - 1, 1).getValues().forEach((v, i) => {
-    if (String(v[0]).trim() === String(navn).trim()) ut.push(i + 2);
+    if (rensNavn_(v[0]) === rensNavn_(navn)) ut.push(i + 2);
   });
   return ut;
 }

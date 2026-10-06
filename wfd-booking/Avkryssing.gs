@@ -65,8 +65,8 @@ function hakeOversikt_(e) {
   const h = booking.getRange(1, 1, 1, booking.getLastColumn()).getValues()[0];
   const kBedrift = bookingKol_(h, 'bedrift');
   if (!kBedrift) return;
-  const navn = booking.getRange(2, kBedrift, booking.getLastRow() - 1, 1).getValues().map(v => String(v[0]).trim());
-  const i = navn.indexOf(bedrift);
+  const navn = booking.getRange(2, kBedrift, booking.getLastRow() - 1, 1).getValues().map(v => rensNavn_(v[0]));
+  const i = navn.indexOf(rensNavn_(bedrift));
   if (i < 0) return;
   const rad = i + 2;
 

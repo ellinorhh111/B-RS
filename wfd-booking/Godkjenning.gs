@@ -211,7 +211,7 @@ function raderPaaNavn_(ark, kol, navn) {
   if (!ark || !kol || ark.getLastRow() < 2) return [];
   const ut = [];
   ark.getRange(2, kol, ark.getLastRow() - 1, 1).getValues().forEach((v, i) => {
-    if (String(v[0]).trim() === String(navn).trim()) ut.push(i + 2);
+    if (rensNavn_(v[0]) === rensNavn_(navn)) ut.push(i + 2);
   });
   return ut;
 }
