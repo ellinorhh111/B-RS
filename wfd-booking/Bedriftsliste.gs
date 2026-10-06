@@ -605,7 +605,7 @@ function invitasjonsKandidater_(ark) {
     const epost = (String(r[kol.epost]).trim() || annen).toLowerCase();
     const fraNett = !String(r[kol.epost]).trim() && !!String(r[kol.kilde]).trim();
     if (!bedrift || fet[i] || !epost || !erIkkeKontaktet_(r, kol)) return;
-    if (iBooking[normaliserNavn_(sokeNavn_(bedrift))]) return;
+    if (iBooking[normaliserNavn_(sokeNavn_(bedrift))] || erUtenUtkast_(bedrift)) return;
     if (utkastTil[epost]) return;
     utkastTil[epost] = true; // samme adresse kan stå på flere rader (f.eks. under to kategorier)
     ut.push({ rad: i + 2, bedrift: sokeNavn_(bedrift), epost, fraNett, tidligere: r[kol.tidligere], norsk: erNorsk_(epost, r[kol.trad]) });

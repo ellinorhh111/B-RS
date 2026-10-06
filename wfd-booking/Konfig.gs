@@ -85,6 +85,23 @@ Please find attached an invitation with further information about the partnershi
 If {bedrift} would like to participate, please reply by Friday, 16 October. Please also feel free to forward the invitation to the relevant colleague if someone else is responsible for partnerships or recruitment activities.
 
 We hope to welcome {bedrift} to Women’s Finance Day 2027!`,
+  // Bedrifter det aldri lages invitasjons- eller purreutkast til (skal diskuteres først). Treffer hele ord i navnet.
+  INGEN_UTKAST: ['Bain', 'McKinsey', 'Kearney', 'Oliver Wyman', 'BCG', 'Boston Consulting', 'EY', 'Ernst & Young', 'PwC',
+    'Rystad'],
+
+  // --- Purringer (menyvalget «Lag purreutkast»), uten AI ---
+  // {navn} = «Hei Helene» / «Hei», {bedrift} = bedriftsnavnet, {dato} = datoen du sendte forrige e-post.
+  PURRING_NO: `{navn},
+
+Jeg ville bare følge opp e-posten min fra {dato} om Women's Finance Day 2027 (onsdag 3. og torsdag 4. mars). Svarfristen er fredag 16. oktober.
+
+Har dere fått sett på invitasjonen? Gi gjerne en kort tilbakemelding på om {bedrift} ønsker å delta, eller om det er noen andre jeg bør kontakte. Jeg tar også gjerne en kort prat hvis dere har spørsmål.`,
+  PURRING_EN: `{navn},
+
+I just wanted to follow up on my email from {dato} about Women's Finance Day 2027 (Wednesday 3 and Thursday 4 March). The deadline to reply is Friday, 16 October.
+
+Have you had a chance to look at the invitation? A short reply on whether {bedrift} would like to participate would be much appreciated, or let me know if there is someone else I should contact. I am also happy to set up a short call if you have any questions.`,
+
   SIGNATUR_EN: `
 Best regards,
 Ellinor Hangerhagen

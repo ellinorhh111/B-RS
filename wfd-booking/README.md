@@ -10,7 +10,7 @@ Et Google Apps Script som ligger i booking-regnearket ditt og:
 3. **Registrerer svar du sender fra mobilen**, så arket alltid viser hvor du slapp, uansett hvor du svarte fra.
 4. **Importerer historikk**: går gjennom gammel e-post og bygger en oversikt over alle bedrifter dere har hatt kontakt med.
 5. **Daglig oppsummering kl. 08** på e-post: hvem som trenger svar, hva som skal følges opp i dag og hvem som bør purres.
-6. **Purreutkast** med ett klikk for bedrifter som ikke har svart på 7 dager.
+6. **Purreutkast** med ett klikk for bedrifter som ikke har svart på 7 dager (fast mal i Konfig – PURRING_NO / PURRING_EN, ingen AI). Utkastet går til samme mottakere som din siste e-post, med den sitert under.
 
 ## Viktig: riktig konto
 
