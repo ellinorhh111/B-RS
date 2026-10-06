@@ -64,6 +64,12 @@ function lesBedrifter_() {
     const i = overskrifter.findIndex(h => navn.indexOf(h.toLowerCase()) >= 0);
     if (i >= 0) kol[nokkel] = i; else mangler.push(nokkel);
   });
+  // Mangler «Bedrift» i et ark som allerede er i bruk, har noen trolig skrevet over overskriften. Da lages
+  // ingen ny tom kolonne (det ville gjort alle rapportene tomme) – i stedet kommer en tydelig feilmelding.
+  if (mangler.indexOf('bedrift') >= 0 && overskrifter.filter(h => h !== '').length > 0 && ark.getLastRow() > 1) {
+    throw new Error('Fant ikke kolonnen «' + kolonnenavn_('bedrift')[0] + '» i fanen «' + ark.getName() + '». ' +
+      'Skriv «' + kolonnenavn_('bedrift')[0] + '» tilbake i overskriften over bedriftsnavnene (vanligvis A1).');
+  }
   if (mangler.length) {
     // Første kolonne kan være helt tom i et nytt ark.
     const start = overskrifter.filter(h => h !== '').length === 0 ? 0 : sisteKol;
